@@ -13,6 +13,10 @@ const ENV_KEYS = [
   "ELEVENLABS_MODEL_ID",
   "ELEVENLABS_ENDPOINT",
   "TTS_CONCURRENCY",
+  "LLM_PROVIDER",
+  "LLM_API_KEY",
+  "LLM_MODEL",
+  "LLM_ENDPOINT",
 ];
 
 describe("loadConfig", () => {
@@ -21,6 +25,7 @@ describe("loadConfig", () => {
   beforeEach(() => {
     saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
     ENV_KEYS.forEach((k) => delete process.env[k]);
+    process.env.LLM_API_KEY = "sk-test-llm-key";
   });
 
   afterEach(() => {

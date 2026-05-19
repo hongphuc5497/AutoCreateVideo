@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Auto Create Video</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Local renderer</p>
+          <h1>Auto Create Video</h1>
+        </div>
+        <button id="refreshOutputs" class="icon-button" type="button" title="Refresh outputs" aria-label="Refresh outputs">↻</button>
+      </header>
+
+      <section class="panel controls-panel" aria-labelledby="controls-title">
+        <div class="panel-heading">
+          <div>
+            <h2 id="controls-title">Generate Video</h2>
+            <p>Paste an article URL. The server fetches it, generates a script, and renders the video.</p>
+          </div>
+        </div>
+
+        <form id="generateForm" class="action-form">
+          <label for="articleUrl">Article URL</label>
+          <div class="field-row">
+            <input id="articleUrl" name="articleUrl" type="url" placeholder="https://vnexpress.net/bai-bao" autocomplete="off" />
+            <button type="submit">Generate</button>
+          </div>
+        </form>
+
+        <form id="pipelineForm" class="action-form" style="margin-top: 12px;">
+          <label for="scriptPath">Or run from existing script.json</label>
+          <div class="field-row">
+            <input id="scriptPath" name="scriptPath" type="text" placeholder="output/example/script.json" autocomplete="off" />
+            <button type="submit">Run</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel outputs-panel" aria-labelledby="outputs-title">
+        <div class="panel-heading">
+          <div>
+            <h2 id="outputs-title">Outputs</h2>
+            <p id="outputCount">Loading result folders...</p>
+          </div>
+        </div>
+        <div id="outputsList" class="outputs-list"></div>
+      </section>
+
+      <section class="panel logs-panel" aria-labelledby="logs-title">
+        <div class="panel-heading">
+          <div>
+            <h2 id="logs-title">Job Log</h2>
+            <p id="jobStatus">Idle</p>
+          </div>
+          <div id="artifactLinks" class="artifact-links"></div>
+        </div>
+        <pre id="jobLog" class="job-log" aria-live="polite"></pre>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

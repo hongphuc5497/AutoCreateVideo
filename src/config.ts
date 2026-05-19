@@ -1,6 +1,14 @@
-import "dotenv/config";
+import { config } from "dotenv";
+import { existsSync } from "node:fs";
+
+// Load .env first, then .env.local overrides (if present)
+config();
+if (existsSync(".env.local")) {
+  config({ path: ".env.local", override: true });
+}
 
 export type TtsProvider = "lucylab" | "elevenlabs";
+export type LlmProvider = "anthropic" | "openai" | "deepseek";
 
 export interface TiktokConfig {
   displayName: string;
@@ -12,6 +20,12 @@ export interface TiktokConfig {
 
 export interface Config {
   ttsProvider: TtsProvider;
+
+  // LLM
+  llmProvider: LlmProvider;
+  llmApiKey: string;
+  llmModel: string;
+  llmEndpoint?: string;
 
   // LucyLab
   lucylabApiKey?: string;
@@ -46,6 +60,14 @@ export function loadConfig(): Config {
     throw new Error(`TTS_PROVIDER must be "lucylab" or "elevenlabs", got "${provider}"`);
   }
 
+  const llmProvider = (process.env.LLM_PROVIDER ?? "anthropic") as LlmProvider;
+  if (!["anthropic", "openai", "deepseek"].includes(llmProvider)) {
+    throw new Error(`LLM_PROVIDER must be "anthropic", "openai", or "deepseek", got "${llmProvider}"`);
+  }
+  if (!process.env.LLM_API_KEY || process.env.LLM_API_KEY.trim() === "") {
+    throw new Error("Missing LLM_API_KEY");
+  }
+
   // Validate provider-specific required vars
   if (provider === "lucylab") {
     if (!process.env.VIETNAMESE_API_KEY || process.env.VIETNAMESE_API_KEY.trim() === "") {
@@ -77,6 +99,10 @@ export function loadConfig(): Config {
 
   return {
     ttsProvider: provider,
+    llmProvider,
+    llmApiKey: process.env.LLM_API_KEY!.trim(),
+    llmModel: process.env.LLM_MODEL ?? "claude-haiku-4-5-20251001",
+    llmEndpoint: process.env.LLM_ENDPOINT || undefined,
     lucylabApiKey: process.env.VIETNAMESE_API_KEY,
     lucylabVoiceId: process.env.VIETNAMESE_VOICEID,
     lucylabEndpoint: process.env.LUCYLAB_ENDPOINT ?? "https://api.lucylab.io/json-rpc",
