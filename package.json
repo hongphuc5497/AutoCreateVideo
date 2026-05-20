@@ -1,6 +1,6 @@
 {
   "name": "auto-news-video",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Auto-generate Vietnamese 9:16 short news videos from URL/txt — Claude Code skill + HyperFrames + LucyLab/ElevenLabs TTS",
   "main": "src/cli.ts",
   "directories": {
@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "pipeline": "tsx src/cli.ts",
     "rerender": "tsx rerender.ts",
+    "ui": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "sfx:download": "tsx scripts/download-sfx.ts",
@@ -32,18 +33,20 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "axios": "^1.15.2",
+    "@anthropic-ai/sdk": "^0.97.0",
+    "axios": "^1.16.1",
     "dotenv": "^17.4.2",
-    "hyperframes": "^0.4.34",
+    "hyperframes": "^0.4.45",
+    "openai": "^6.38.0",
     "p-limit": "^7.3.0",
-    "zod": "^4.3.6"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0",
-    "@vitest/coverage-v8": "^4.1.5",
-    "nock": "^14.0.13",
-    "tsx": "^4.21.0",
+    "@types/node": "^25.9.0",
+    "@vitest/coverage-v8": "^4.1.6",
+    "nock": "^14.0.15",
+    "tsx": "^4.22.2",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.6"
   }
 }
