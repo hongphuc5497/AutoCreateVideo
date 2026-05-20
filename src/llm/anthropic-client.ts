@@ -20,7 +20,7 @@ export class AnthropicClient implements LlmClient {
   private client: Anthropic;
 
   constructor(private cfg: Config) {
-    this.client = new Anthropic({ apiKey: cfg.llmApiKey, timeout: 120_000 });
+    this.client = new Anthropic({ apiKey: cfg.llmApiKey!, timeout: 120_000 });
   }
 
   async generateScript(

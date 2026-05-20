@@ -39,6 +39,31 @@
             <button type="submit">Run</button>
           </div>
         </form>
+
+        <form id="settingsForm" class="settings-form">
+          <div class="section-divider"></div>
+          <div class="switch-row">
+            <label for="tiktokEnabled">Show TikTok info in video</label>
+            <input id="tiktokEnabled" name="tiktokEnabled" type="checkbox" />
+          </div>
+          <div class="settings-grid">
+            <label for="tiktokDisplayName">Display name</label>
+            <input id="tiktokDisplayName" name="tiktokDisplayName" type="text" autocomplete="off" />
+
+            <label for="tiktokHandle">Handle</label>
+            <input id="tiktokHandle" name="tiktokHandle" type="text" autocomplete="off" />
+
+            <label for="tiktokFollowers">Followers</label>
+            <input id="tiktokFollowers" name="tiktokFollowers" type="text" autocomplete="off" />
+
+            <label for="tiktokAvatarUrl">Avatar URL</label>
+            <input id="tiktokAvatarUrl" name="tiktokAvatarUrl" type="url" placeholder="https://example.com/avatar.jpg" autocomplete="off" />
+          </div>
+          <div class="settings-actions">
+            <p id="settingsStatus">Settings load from env until saved here.</p>
+            <button type="submit">Save Settings</button>
+          </div>
+        </form>
       </section>
 
       <section class="panel outputs-panel" aria-labelledby="outputs-title">

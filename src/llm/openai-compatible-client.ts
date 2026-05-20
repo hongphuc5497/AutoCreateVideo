@@ -28,7 +28,7 @@ export class OpenAICompatibleClient implements LlmClient {
 
   constructor(private cfg: Config) {
     this.client = new OpenAI({
-      apiKey: cfg.llmApiKey,
+      apiKey: cfg.llmApiKey!,
       baseURL: cfg.llmProvider === "deepseek"
         ? (cfg.llmEndpoint ?? "https://api.deepseek.com/v1")
         : (cfg.llmEndpoint || undefined),

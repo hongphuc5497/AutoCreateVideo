@@ -12,6 +12,7 @@ const GRAIN_OVERLAY_HTML = `<div id="grain-overlay" style="position:absolute;top
 
 // Default TikTok config (used if not passed)
 const DEFAULT_TIKTOK: TiktokConfig = {
+  enabled: true,
   displayName: "Công nghệ 24h",
   handle: "@congnghe24h",
   followers: "1.2M followers",
@@ -49,7 +50,7 @@ export function composeHtml(args: ComposeArgs): string {
     const audio = sceneAudio.find((a) => a.id === scene.id);
     if (!audio) throw new Error(`No audio entry for scene id=${scene.id}`);
     const isOutro = scene.type === "outro";
-    const dur = audio.durationSec + gapSec + (isOutro ? outroHoldSec : 0);
+    const dur = audio.durationSec + gapSec + (isOutro && tiktok.enabled ? outroHoldSec : 0);
     const start = cursor;
     cursor += dur;
     return { scene, start, duration: dur };
@@ -61,7 +62,7 @@ export function composeHtml(args: ComposeArgs): string {
     return renderScene(scene, start, duration, bgImageRelPath, tiktok, tiktokAvatar);
   }).join("\n");
 
-  // Persistent shell — uses tiktok handle in footer
+  // Persistent shell — optionally uses the TikTok handle in footer
   const shellHtml = renderShell(script.metadata, tiktok);
 
   const animJs = readFileSync(join(TPL_DIR, "animations.js"), "utf8");
@@ -81,6 +82,12 @@ function renderShell(metadata: Script["metadata"], tiktok: TiktokConfig): string
   const channel = escapeHtml(metadata.channel);
   const domain = escapeHtml(metadata.source.domain);
   const handle = escapeHtml(tiktok.handle);
+  const tiktokHandle = tiktok.enabled
+    ? `<div class="brand-shell-handle">
+  <span class="handle-music">&#9835;</span>
+  <span class="handle-text">${handle}</span>
+</div>`
+    : "";
   return `
 <!-- Shell: persistent brand elements (no data-start → always visible) -->
 <div class="shell-bg"></div>
@@ -93,10 +100,7 @@ function renderShell(metadata: Script["metadata"], tiktok: TiktokConfig): string
   </div>
 </div>
 
-<div class="brand-shell-handle">
-  <span class="handle-music">&#9835;</span>
-  <span class="handle-text">${handle}</span>
-</div>
+${tiktokHandle}
 
 <div class="brand-shell-keyword">
   <span>${escapeHtml(domain)}</span>
@@ -248,7 +252,7 @@ function renderOutroInner(
   tiktok: TiktokConfig,
   avatarRelPath: string,
 ): string {
-  const ttCard = renderTiktokCard(tiktok, avatarRelPath);
+  const ttCard = tiktok.enabled ? renderTiktokCard(tiktok, avatarRelPath) : "";
   return `
 <div class="layout-outro">
   <div class="out-cta-top">${escapeHtml(td.ctaTop)}</div>

@@ -13,6 +13,12 @@ const scriptPath = $("#scriptPath");
 const jobLog = $("#jobLog");
 const jobStatus = $("#jobStatus");
 const artifactLinks = $("#artifactLinks");
+const settingsStatus = $("#settingsStatus");
+const tiktokEnabled = $("#tiktokEnabled");
+const tiktokDisplayName = $("#tiktokDisplayName");
+const tiktokHandle = $("#tiktokHandle");
+const tiktokFollowers = $("#tiktokFollowers");
+const tiktokAvatarUrl = $("#tiktokAvatarUrl");
 
 $("#refreshOutputs").addEventListener("click", loadOutputs);
 
@@ -25,6 +31,72 @@ $("#pipelineForm").addEventListener("submit", (event) => {
   event.preventDefault();
   startJob("/api/pipeline", { scriptPath: scriptPath.value.trim() });
 });
+
+$("#settingsForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await saveSettings();
+});
+
+tiktokEnabled.addEventListener("change", updateTiktokInputs);
+
+async function loadSettings() {
+  settingsStatus.textContent = "Loading settings...";
+  try {
+    const response = await fetch("/api/settings");
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Failed to load settings");
+    applySettings(data.settings);
+    settingsStatus.textContent = "Settings ready";
+  } catch (error) {
+    settingsStatus.textContent = error.message;
+  }
+}
+
+async function saveSettings() {
+  settingsStatus.textContent = "Saving settings...";
+  try {
+    const response = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(readSettingsForm()),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Failed to save settings");
+    applySettings(data.settings);
+    settingsStatus.textContent = "Settings saved";
+  } catch (error) {
+    settingsStatus.textContent = error.message;
+  }
+}
+
+function applySettings(settings) {
+  const tiktok = settings.tiktok;
+  tiktokEnabled.checked = Boolean(tiktok.enabled);
+  tiktokDisplayName.value = tiktok.displayName || "";
+  tiktokHandle.value = tiktok.handle || "";
+  tiktokFollowers.value = tiktok.followers || "";
+  tiktokAvatarUrl.value = tiktok.avatarUrl || "";
+  updateTiktokInputs();
+}
+
+function readSettingsForm() {
+  return {
+    tiktok: {
+      enabled: tiktokEnabled.checked,
+      displayName: tiktokDisplayName.value.trim(),
+      handle: tiktokHandle.value.trim(),
+      followers: tiktokFollowers.value.trim(),
+      avatarUrl: tiktokAvatarUrl.value.trim(),
+    },
+  };
+}
+
+function updateTiktokInputs() {
+  const disabled = !tiktokEnabled.checked;
+  [tiktokDisplayName, tiktokHandle, tiktokFollowers, tiktokAvatarUrl].forEach((input) => {
+    input.disabled = disabled;
+  });
+}
 
 async function loadOutputs() {
   outputCount.textContent = "Loading result folders...";
@@ -191,4 +263,5 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+loadSettings();
 loadOutputs();

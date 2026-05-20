@@ -24,6 +24,10 @@ export interface LlmClient {
 }
 
 export function createLlmClient(cfg: Config): LlmClient {
+  if (!cfg.llmApiKey) {
+    throw new Error("Missing LLM_API_KEY");
+  }
+
   switch (cfg.llmProvider) {
     case "anthropic":
       return new AnthropicClient(cfg);

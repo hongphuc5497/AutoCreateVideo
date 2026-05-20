@@ -3,10 +3,16 @@ import { join } from "node:path";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   OUTPUT_ROOT,
+  SETTINGS_PATH,
   assertExistingScriptPath,
+  defaultUiSettings,
   listOutputs,
+  normalizeUiSettings,
+  readUiSettings,
   safeOutputPath,
+  settingsToEnv,
   toOutputRelative,
+  writeUiSettings,
 } from "./server.js";
 
 const FIXTURE_NAME = "ui-server-test-fixture";
@@ -15,11 +21,13 @@ const FIXTURE_DIR = join(OUTPUT_ROOT, FIXTURE_NAME);
 describe("local UI server helpers", () => {
   beforeEach(async () => {
     await rm(FIXTURE_DIR, { recursive: true, force: true });
+    await rm(SETTINGS_PATH, { force: true });
     await mkdir(FIXTURE_DIR, { recursive: true });
   });
 
   afterEach(async () => {
     await rm(FIXTURE_DIR, { recursive: true, force: true });
+    await rm(SETTINGS_PATH, { force: true });
   });
 
   it("rejects paths outside output", () => {
@@ -69,5 +77,60 @@ describe("local UI server helpers", () => {
         videoMp4: `/outputs/${FIXTURE_NAME}/video.mp4`,
       },
     });
+  });
+
+  it("loads default UI settings from environment fallback", async () => {
+    await expect(readUiSettings()).resolves.toEqual(defaultUiSettings());
+  });
+
+  it("normalizes and persists TikTok UI settings", async () => {
+    const settings = await writeUiSettings({
+      tiktok: {
+        enabled: false,
+        displayName: "  UI Channel  ",
+        handle: "  @ui-channel  ",
+        followers: "  99 followers  ",
+        avatarUrl: "  https://example.com/avatar.png  ",
+      },
+    });
+
+    expect(settings).toEqual({
+      tiktok: {
+        enabled: false,
+        displayName: "UI Channel",
+        handle: "@ui-channel",
+        followers: "99 followers",
+        avatarUrl: "https://example.com/avatar.png",
+      },
+    });
+    await expect(readUiSettings()).resolves.toEqual(settings);
+    expect(settingsToEnv(settings)).toMatchObject({
+      TIKTOK_ENABLED: "false",
+      TIKTOK_DISPLAY_NAME: "UI Channel",
+      TIKTOK_HANDLE: "@ui-channel",
+      TIKTOK_FOLLOWERS: "99 followers",
+      TIKTOK_AVATAR_URL: "https://example.com/avatar.png",
+    });
+  });
+
+  it("rejects invalid TikTok settings", () => {
+    expect(() => normalizeUiSettings({
+      tiktok: {
+        enabled: true,
+        displayName: "",
+        handle: "@bad",
+        followers: "1",
+      },
+    })).toThrow(/display name/);
+
+    expect(() => normalizeUiSettings({
+      tiktok: {
+        enabled: true,
+        displayName: "Bad",
+        handle: "@bad",
+        followers: "1",
+        avatarUrl: "ftp://example.com/avatar.png",
+      },
+    })).toThrow(/HTTP\(S\)/);
   });
 });

@@ -159,6 +159,17 @@ input:focus {
   box-shadow: 0 0 0 3px rgba(39, 211, 162, 0.12);
 }
 
+input:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+
 button {
   border: 0;
   border-radius: 6px;
@@ -180,6 +191,56 @@ button:hover {
   display: grid;
   place-items: center;
   font-size: 22px;
+}
+
+.settings-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.section-divider {
+  height: 1px;
+  background: var(--line);
+  margin-bottom: 2px;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.switch-row label,
+.settings-grid label {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px 10px;
+}
+
+.settings-grid input {
+  padding: 9px 10px;
+}
+
+.settings-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-actions p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .outputs-list {
@@ -299,7 +360,9 @@ code {
   }
 
   .output-card,
-  .field-row {
+  .field-row,
+  .settings-grid,
+  .settings-actions {
     grid-template-columns: 1fr;
   }
 

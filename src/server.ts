@@ -7,11 +7,13 @@ import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ScriptSchema } from "./render/script-schema.js";
 import { loadConfig } from "./config.js";
+import type { TiktokConfig } from "./config.js";
 import { createLlmClient } from "./llm/llm-client.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const PROJECT_ROOT = resolve(__dirname, "..");
 export const OUTPUT_ROOT = join(PROJECT_ROOT, "output");
+export const SETTINGS_PATH = join(OUTPUT_ROOT, ".ui-settings.json");
 const UI_ROOT = join(PROJECT_ROOT, "src", "ui");
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -56,6 +58,10 @@ interface Job {
   logs: string[];
   listeners: Set<(event: JobEvent, data: unknown) => void>;
   outputDir?: string;
+}
+
+export interface UiSettings {
+  tiktok: TiktokConfig;
 }
 
 const jobs = new Map<string, Job>();
@@ -152,6 +158,99 @@ export async function listOutputs(): Promise<OutputItem[]> {
     .sort((a, b) => Date.parse(b.modifiedAt) - Date.parse(a.modifiedAt));
 }
 
+function boolFromEnv(name: string, def: boolean): boolean {
+  const v = process.env[name];
+  if (!v) return def;
+  if (["1", "true", "yes", "on"].includes(v.toLowerCase())) return true;
+  if (["0", "false", "no", "off"].includes(v.toLowerCase())) return false;
+  return def;
+}
+
+export function defaultUiSettings(): UiSettings {
+  return {
+    tiktok: {
+      enabled: boolFromEnv("TIKTOK_ENABLED", true),
+      displayName: process.env.TIKTOK_DISPLAY_NAME ?? "Công nghệ 24h",
+      handle: process.env.TIKTOK_HANDLE ?? "@congnghe24h",
+      followers: process.env.TIKTOK_FOLLOWERS ?? "1.2M followers",
+      avatarUrl: process.env.TIKTOK_AVATAR_URL || undefined,
+    },
+  };
+}
+
+function requiredString(value: unknown, name: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`${name} must be a string`);
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`${name} is required`);
+  }
+  return trimmed;
+}
+
+function optionalUrl(value: unknown, name: string): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "string") {
+    throw new Error(`${name} must be a string`);
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (!/^https?:\/\/.+/.test(trimmed)) {
+    throw new Error(`${name} must be an HTTP(S) URL`);
+  }
+  return trimmed;
+}
+
+export function normalizeUiSettings(input: unknown, fallback = defaultUiSettings()): UiSettings {
+  const source = input && typeof input === "object" ? input as Record<string, unknown> : {};
+  const tiktokInput = source.tiktok && typeof source.tiktok === "object"
+    ? source.tiktok as Record<string, unknown>
+    : {};
+  const enabled = typeof tiktokInput.enabled === "boolean"
+    ? tiktokInput.enabled
+    : fallback.tiktok.enabled;
+
+  return {
+    tiktok: {
+      enabled,
+      displayName: requiredString(tiktokInput.displayName ?? fallback.tiktok.displayName, "TikTok display name"),
+      handle: requiredString(tiktokInput.handle ?? fallback.tiktok.handle, "TikTok handle"),
+      followers: requiredString(tiktokInput.followers ?? fallback.tiktok.followers, "TikTok followers"),
+      avatarUrl: optionalUrl(tiktokInput.avatarUrl ?? fallback.tiktok.avatarUrl, "TikTok avatar URL"),
+    },
+  };
+}
+
+export async function readUiSettings(): Promise<UiSettings> {
+  const defaults = defaultUiSettings();
+  try {
+    const raw = JSON.parse(await readFile(SETTINGS_PATH, "utf8"));
+    return normalizeUiSettings(raw, defaults);
+  } catch (e) {
+    const code = typeof e === "object" && e && "code" in e ? String((e as NodeJS.ErrnoException).code) : "";
+    if (code === "ENOENT") return defaults;
+    throw e;
+  }
+}
+
+export async function writeUiSettings(input: unknown): Promise<UiSettings> {
+  const settings = normalizeUiSettings(input, await readUiSettings());
+  await mkdir(OUTPUT_ROOT, { recursive: true });
+  await writeFile(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+  return settings;
+}
+
+export function settingsToEnv(settings: UiSettings): NodeJS.ProcessEnv {
+  return {
+    TIKTOK_ENABLED: settings.tiktok.enabled ? "true" : "false",
+    TIKTOK_DISPLAY_NAME: settings.tiktok.displayName,
+    TIKTOK_HANDLE: settings.tiktok.handle,
+    TIKTOK_FOLLOWERS: settings.tiktok.followers,
+    TIKTOK_AVATAR_URL: settings.tiktok.avatarUrl ?? "",
+  };
+}
+
 function createJob(input: string): Job {
   if (runningJob) {
     throw new Error(`Job ${runningJob.id} is still running`);
@@ -189,13 +288,14 @@ function emitProgress(job: Job, message: string): void {
   emit(job, "progress", { message });
 }
 
-function spawnPipeline(job: Job, scriptPath: string): void {
+async function spawnPipeline(job: Job, scriptPath: string): Promise<void> {
+  const settings = await readUiSettings();
   const relPath = toOutputRelative(scriptPath);
   appendLog(job, `$ npm run pipeline -- ${relPath}`);
   const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
   const child = spawn(npmCmd, ["run", "pipeline", "--", relPath], {
     cwd: PROJECT_ROOT,
-    env: process.env,
+    env: { ...process.env, ...settingsToEnv(settings) },
     stdio: ["ignore", "pipe", "pipe"],
   });
 
@@ -264,7 +364,8 @@ async function serveStatic(res: ServerResponse, root: string, relPath: string): 
   const decoded = decodeURIComponent(relPath);
   const target = resolve(root, decoded);
   const rel = relative(root, target);
-  if (rel.startsWith("..") || rel.split(sep).includes("..")) {
+  const parts = rel.split(sep);
+  if (rel.startsWith("..") || parts.includes("..") || parts.some((part) => part.startsWith("."))) {
     sendError(res, 403, "Forbidden");
     return;
   }
@@ -364,7 +465,7 @@ async function runGenerateJob(job: Job, url: string, res: ServerResponse): Promi
     emitProgress(job, `Script written to ${toOutputRelative(scriptPath)}`);
     emitProgress(job, "Starting pipeline...");
 
-    spawnPipeline(job, scriptPath);
+    await spawnPipeline(job, scriptPath);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     appendLog(job, `Generate failed: ${message}`);
@@ -378,6 +479,17 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
   try {
     if (req.method === "GET" && url.pathname === "/api/outputs") {
       sendJson(res, 200, { outputs: await listOutputs() });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/settings") {
+      sendJson(res, 200, { settings: await readUiSettings() });
+      return;
+    }
+
+    if (req.method === "PUT" && url.pathname === "/api/settings") {
+      const body = await readJsonBody(req);
+      sendJson(res, 200, { settings: await writeUiSettings(body) });
       return;
     }
 
@@ -399,8 +511,12 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
       const body = await readJsonBody(req);
       const scriptPath = await assertExistingScriptPath(body.scriptPath);
       const job = createJob(scriptPath);
+      job.outputDir = toOutputRelative(dirname(join(PROJECT_ROOT, scriptPath)));
       sendJson(res, 202, { job: serializeJob(job) });
-      spawnPipeline(job, join(PROJECT_ROOT, scriptPath));
+      spawnPipeline(job, join(PROJECT_ROOT, scriptPath)).catch((e) => {
+        appendLog(job, `Failed to start pipeline: ${e instanceof Error ? e.message : String(e)}`);
+        finishJob(job, "failed", null);
+      });
       return;
     }
 
