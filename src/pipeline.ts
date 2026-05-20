@@ -189,18 +189,21 @@ export async function runPipeline(scriptPath: string): Promise<void> {
     }
     throw new Error(`No bundled avatar found. Place an image at assets/avatar.{jpg,png,webp}`);
   };
-  const bundledAvatar = findBundledAvatar();
-  const ttAvatarExt = bundledAvatar.split(".").pop()!.toLowerCase();
-  const ttAvatarFile = `tiktok-avatar.${ttAvatarExt}`;
-  const ttAvatarOut = join(outputDir, ttAvatarFile);
-  if (cfg.tiktok.avatarUrl) {
-    const r = await fetchImage(cfg.tiktok.avatarUrl, ttAvatarOut);
-    if (!r.success) {
-      log.warn(`TikTok avatar download failed: ${r.reason} → falling back to bundled default`);
+  let ttAvatarFile = "";
+  if (cfg.tiktok.enabled) {
+    const bundledAvatar = findBundledAvatar();
+    const ttAvatarExt = bundledAvatar.split(".").pop()!.toLowerCase();
+    ttAvatarFile = `tiktok-avatar.${ttAvatarExt}`;
+    const ttAvatarOut = join(outputDir, ttAvatarFile);
+    if (cfg.tiktok.avatarUrl) {
+      const r = await fetchImage(cfg.tiktok.avatarUrl, ttAvatarOut);
+      if (!r.success) {
+        log.warn(`TikTok avatar download failed: ${r.reason} → falling back to bundled default`);
+        await copyFile(bundledAvatar, ttAvatarOut);
+      }
+    } else {
       await copyFile(bundledAvatar, ttAvatarOut);
     }
-  } else {
-    await copyFile(bundledAvatar, ttAvatarOut);
   }
 
   const html = composeHtml({

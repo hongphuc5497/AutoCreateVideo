@@ -13,6 +13,15 @@ const ENV_KEYS = [
   "ELEVENLABS_MODEL_ID",
   "ELEVENLABS_ENDPOINT",
   "TTS_CONCURRENCY",
+  "LLM_PROVIDER",
+  "LLM_API_KEY",
+  "LLM_MODEL",
+  "LLM_ENDPOINT",
+  "TIKTOK_ENABLED",
+  "TIKTOK_DISPLAY_NAME",
+  "TIKTOK_HANDLE",
+  "TIKTOK_FOLLOWERS",
+  "TIKTOK_AVATAR_URL",
 ];
 
 describe("loadConfig", () => {
@@ -53,6 +62,35 @@ describe("loadConfig", () => {
       expect(cfg.lucylabPollIntervalMs).toBe(2000);
       expect(cfg.lucylabPollTimeoutMs).toBe(120000);
       expect(cfg.ttsConcurrency).toBe(1);
+      expect(cfg.llmApiKey).toBeUndefined();
+      expect(cfg.tiktok.enabled).toBe(true);
+    });
+
+    it("reads TikTok env overrides", () => {
+      process.env.VIETNAMESE_API_KEY = "k";
+      process.env.VIETNAMESE_VOICEID = "v";
+      process.env.TIKTOK_ENABLED = "false";
+      process.env.TIKTOK_DISPLAY_NAME = "Custom Channel";
+      process.env.TIKTOK_HANDLE = "@custom";
+      process.env.TIKTOK_FOLLOWERS = "42 followers";
+      process.env.TIKTOK_AVATAR_URL = "https://example.com/avatar.jpg";
+
+      const cfg = loadConfig();
+
+      expect(cfg.tiktok).toEqual({
+        enabled: false,
+        displayName: "Custom Channel",
+        handle: "@custom",
+        followers: "42 followers",
+        avatarUrl: "https://example.com/avatar.jpg",
+      });
+    });
+
+    it("rejects invalid TIKTOK_ENABLED values", () => {
+      process.env.VIETNAMESE_API_KEY = "k";
+      process.env.VIETNAMESE_VOICEID = "v";
+      process.env.TIKTOK_ENABLED = "maybe";
+      expect(() => loadConfig()).toThrow(/TIKTOK_ENABLED/);
     });
   });
 

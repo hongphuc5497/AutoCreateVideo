@@ -1,8 +1,17 @@
-import "dotenv/config";
+import { config } from "dotenv";
+import { existsSync } from "node:fs";
+
+// Load .env first, then .env.local overrides (if present)
+config();
+if (existsSync(".env.local")) {
+  config({ path: ".env.local", override: true });
+}
 
 export type TtsProvider = "lucylab" | "elevenlabs";
+export type LlmProvider = "anthropic" | "openai" | "deepseek";
 
 export interface TiktokConfig {
+  enabled: boolean;
   displayName: string;
   handle: string;
   followers: string;
@@ -12,6 +21,12 @@ export interface TiktokConfig {
 
 export interface Config {
   ttsProvider: TtsProvider;
+
+  // LLM
+  llmProvider: LlmProvider;
+  llmApiKey?: string;
+  llmModel: string;
+  llmEndpoint?: string;
 
   // LucyLab
   lucylabApiKey?: string;
@@ -40,10 +55,23 @@ function intDefault(name: string, def: number): number {
   return n;
 }
 
+function boolDefault(name: string, def: boolean): boolean {
+  const v = process.env[name];
+  if (!v) return def;
+  if (["1", "true", "yes", "on"].includes(v.toLowerCase())) return true;
+  if (["0", "false", "no", "off"].includes(v.toLowerCase())) return false;
+  throw new Error(`Env var ${name} must be boolean, got "${v}"`);
+}
+
 export function loadConfig(): Config {
   const provider = (process.env.TTS_PROVIDER ?? "lucylab") as TtsProvider;
   if (provider !== "lucylab" && provider !== "elevenlabs") {
     throw new Error(`TTS_PROVIDER must be "lucylab" or "elevenlabs", got "${provider}"`);
+  }
+
+  const llmProvider = (process.env.LLM_PROVIDER ?? "anthropic") as LlmProvider;
+  if (!["anthropic", "openai", "deepseek"].includes(llmProvider)) {
+    throw new Error(`LLM_PROVIDER must be "anthropic", "openai", or "deepseek", got "${llmProvider}"`);
   }
 
   // Validate provider-specific required vars
@@ -77,6 +105,10 @@ export function loadConfig(): Config {
 
   return {
     ttsProvider: provider,
+    llmProvider,
+    llmApiKey: process.env.LLM_API_KEY?.trim() || undefined,
+    llmModel: process.env.LLM_MODEL ?? "claude-haiku-4-5-20251001",
+    llmEndpoint: process.env.LLM_ENDPOINT || undefined,
     lucylabApiKey: process.env.VIETNAMESE_API_KEY,
     lucylabVoiceId: process.env.VIETNAMESE_VOICEID,
     lucylabEndpoint: process.env.LUCYLAB_ENDPOINT ?? "https://api.lucylab.io/json-rpc",
@@ -87,6 +119,7 @@ export function loadConfig(): Config {
     elevenlabsModelId: process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2",
     elevenlabsEndpoint: process.env.ELEVENLABS_ENDPOINT ?? "https://api.elevenlabs.io/v1",
     tiktok: {
+      enabled: boolDefault("TIKTOK_ENABLED", true),
       displayName: process.env.TIKTOK_DISPLAY_NAME ?? "Công nghệ 24h",
       handle: process.env.TIKTOK_HANDLE ?? "@congnghe24h",
       followers: process.env.TIKTOK_FOLLOWERS ?? "1.2M followers",

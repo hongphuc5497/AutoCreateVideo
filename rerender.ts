@@ -6,6 +6,7 @@
 import { readFile, writeFile, copyFile } from "node:fs/promises";
 import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
+import { config } from "dotenv";
 import { ScriptSchema } from "./src/render/script-schema.js";
 import { loadConfig } from "./src/config.js";
 import { getDurationSec, concatWithSilence, mixSfxOntoVoice, type SfxMixSpec } from "./src/assets/audio-tools.js";
@@ -13,6 +14,8 @@ import { indexSfxLibrary, pickSfxForScene, defaultPlayback } from "./src/assets/
 import { existsSync } from "node:fs";
 import { composeHtml } from "./src/render/html-composer.js";
 import { renderWithHyperframes } from "./src/render/hyperframes-runner.js";
+
+config({ path: ".env.local" });
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TPL_DIR = join(__dirname, "src", "render", "templates");
@@ -103,20 +106,23 @@ async function main() {
   const bgImageRelPath = fs.existsSync(bgImagePath) ? "images/bg.jpg" : null;
   console.log(`bgImage: ${bgImageRelPath ?? "(none — gradient fallback)"}`);
 
-  // TikTok avatar — find bundled (jpg/jpeg/png/webp) and copy to output dir
-  let bundledAvatar: string | null = null;
-  for (const ext of ["jpg", "jpeg", "png", "webp"]) {
-    const p = join(__dirname, "assets", `avatar.${ext}`);
-    if (existsSync(p)) { bundledAvatar = p; break; }
+  // TikTok avatar — only needed when the outro follow card is enabled.
+  let ttAvatarFile = "";
+  if (cfg.tiktok.enabled) {
+    let bundledAvatar: string | null = null;
+    for (const ext of ["jpg", "jpeg", "png", "webp"]) {
+      const p = join(__dirname, "assets", `avatar.${ext}`);
+      if (existsSync(p)) { bundledAvatar = p; break; }
+    }
+    if (!bundledAvatar) {
+      throw new Error("No bundled avatar found. Place an image at assets/avatar.{jpg,png,webp}");
+    }
+    const ttAvatarExt = bundledAvatar.split(".").pop()!.toLowerCase();
+    ttAvatarFile = `tiktok-avatar.${ttAvatarExt}`;
+    const ttAvatarOut = join(outputDir, ttAvatarFile);
+    // Always re-copy in case bundled was updated
+    await copyFile(bundledAvatar, ttAvatarOut);
   }
-  if (!bundledAvatar) {
-    throw new Error("No bundled avatar found. Place an image at assets/avatar.{jpg,png,webp}");
-  }
-  const ttAvatarExt = bundledAvatar.split(".").pop()!.toLowerCase();
-  const ttAvatarFile = `tiktok-avatar.${ttAvatarExt}`;
-  const ttAvatarOut = join(outputDir, ttAvatarFile);
-  // Always re-copy in case bundled was updated
-  await copyFile(bundledAvatar, ttAvatarOut);
 
   // Compose HTML
   const html = composeHtml({

@@ -98,4 +98,30 @@ describe("composeHtml", () => {
     expect(html).toContain('class="bg gradient-news-dark"');
     expect(html).not.toContain("background-image: url");
   });
+
+  it("omits TikTok handle and outro card when TikTok is disabled", () => {
+    const script = JSON.parse(readFileSync("tests/fixtures/sample-script-with-image.json", "utf8")) as Script;
+    const sceneAudio = script.scenes.map((s) => ({ id: s.id, durationSec: 5 }));
+    const html = composeHtml({
+      script,
+      sceneAudio,
+      gapSec: 0.3,
+      bgImageRelPath: "images/bg.jpg",
+      audioRelPath: "voice.mp3",
+      tiktok: {
+        enabled: false,
+        displayName: "Hidden Channel",
+        handle: "@hidden",
+        followers: "0 followers",
+      },
+      tiktokAvatarRelPath: "",
+    });
+
+    expect(html).toContain('class="brand-shell-header"');
+    expect(html).toContain('class="brand-shell-keyword"');
+    expect(html).not.toContain('class="brand-shell-handle"');
+    expect(html).not.toContain('<div id="tt-card"');
+    expect(html).not.toContain("@hidden");
+    expect(html).not.toContain("Hidden Channel");
+  });
 });
