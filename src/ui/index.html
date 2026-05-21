@@ -27,63 +27,197 @@
           <div>
             <div style="display: flex; align-items: center; gap: 8px;">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00f5a0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="m5 3 1 2.5L8.5 6 6 7 5 9.5 4 7 1.5 6 4 5.5z"/><path d="m19 17 1 2.5 2.5.5-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1z"/></svg>
-              <h2 id="controls-title">Generate Video</h2>
+              <h2 id="controls-title">Setup Wizard</h2>
             </div>
-            <p>Paste an article URL. The server fetches it, generates a script, and renders the video.</p>
+            <p>Configure credentials and branding before running the video pipeline.</p>
           </div>
         </div>
 
-        <form id="generateForm" class="action-form">
-          <label for="articleUrl">Article URL</label>
-          <div class="field-row">
-            <input id="articleUrl" name="articleUrl" type="url" placeholder="https://vnexpress.net/bai-bao" autocomplete="off" />
-            <button type="submit">Generate</button>
+        <!-- Wizard Stepper Tracker -->
+        <div class="wizard-stepper">
+          <div class="wizard-step active" data-step="1">
+            <div class="step-dot">1</div>
+            <span class="step-title">LLM</span>
           </div>
-        </form>
-        <div id="errorBanner" class="error-banner" hidden></div>
-        <div id="progressPanel" class="progress-panel" hidden>
-          <div class="progress-step" data-stage="fetch"><span></span>Đang tải bài viết</div>
-          <div class="progress-step" data-stage="script"><span></span>Đang tạo kịch bản</div>
-          <div class="progress-step" data-stage="tts"><span></span>Đang tạo giọng đọc</div>
-          <div class="progress-step" data-stage="render"><span></span>Đang render video</div>
-          <div class="progress-step" data-stage="complete"><span></span>Hoàn thành</div>
+          <div class="wizard-step" data-step="2">
+            <div class="step-dot">2</div>
+            <span class="step-title">Voice</span>
+          </div>
+          <div class="wizard-step" data-step="3">
+            <div class="step-dot">3</div>
+            <span class="step-title">Brand</span>
+          </div>
+          <div class="wizard-step" data-step="4">
+            <div class="step-dot">4</div>
+            <span class="step-title">Run</span>
+          </div>
         </div>
 
-        <form id="pipelineForm" class="action-form" style="margin-top: 12px;">
-          <label for="scriptPath">Or run from existing script.json</label>
-          <div class="field-row">
-            <input id="scriptPath" name="scriptPath" type="text" placeholder="output/example/script.json" autocomplete="off" />
-            <button type="submit">Run</button>
-          </div>
-        </form>
-
+        <!-- Settings Setup Form covering Steps 1 to 3 -->
         <form id="settingsForm" class="settings-form">
-          <div class="section-divider"></div>
-          <div class="switch-row">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33a1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
-              <label for="tiktokEnabled" style="margin: 0; cursor: pointer;">Show TikTok info in video</label>
+          <!-- Step 1: LLM Credentials -->
+          <div class="wizard-content active" data-step="1">
+            <h3 class="step-heading">Step 1: LLM Credentials</h3>
+            
+            <div class="form-group">
+              <label for="llmProvider">LLM Provider</label>
+              <select id="llmProvider" name="llmProvider" class="select-input">
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="openai">OpenAI (ChatGPT)</option>
+                <option value="deepseek">DeepSeek</option>
+              </select>
             </div>
-            <input id="tiktokEnabled" name="tiktokEnabled" type="checkbox" />
+
+            <div class="form-group">
+              <label for="llmApiKey">API Key</label>
+              <input id="llmApiKey" name="llmApiKey" type="password" placeholder="sk-..." autocomplete="off" />
+            </div>
+
+            <div class="form-group">
+              <label for="llmModel">Model Name</label>
+              <input id="llmModel" name="llmModel" type="text" placeholder="claude-haiku-4-5-20251001" autocomplete="off" />
+            </div>
+
+            <div class="form-group">
+              <label for="llmEndpoint">Custom Endpoint (Optional)</label>
+              <input id="llmEndpoint" name="llmEndpoint" type="text" placeholder="https://api.anthropic.com" autocomplete="off" />
+            </div>
           </div>
-          <div class="settings-grid">
-            <label for="tiktokDisplayName">Display name</label>
-            <input id="tiktokDisplayName" name="tiktokDisplayName" type="text" autocomplete="off" />
 
-            <label for="tiktokHandle">Handle</label>
-            <input id="tiktokHandle" name="tiktokHandle" type="text" autocomplete="off" />
+          <!-- Step 2: TTS Credentials + Gemini Image Gen -->
+          <div class="wizard-content" data-step="2">
+            <h3 class="step-heading">Step 2: TTS & Media API</h3>
 
-            <label for="tiktokFollowers">Followers</label>
-            <input id="tiktokFollowers" name="tiktokFollowers" type="text" autocomplete="off" />
+            <div class="form-group">
+              <label for="ttsProvider">TTS Provider</label>
+              <select id="ttsProvider" name="ttsProvider" class="select-input">
+                <option value="lucylab">LucyLab (Vietnamese Native)</option>
+                <option value="elevenlabs">ElevenLabs (Multilingual)</option>
+              </select>
+            </div>
 
-            <label for="tiktokAvatarUrl">Avatar URL</label>
-            <input id="tiktokAvatarUrl" name="tiktokAvatarUrl" type="url" placeholder="https://example.com/avatar.jpg" autocomplete="off" />
+            <!-- LucyLab Settings Block -->
+            <div id="lucylabSettingsBlock" class="provider-sub-block">
+              <div class="form-group">
+                <label for="lucylabApiKey">LucyLab API Key</label>
+                <input id="lucylabApiKey" name="lucylabApiKey" type="password" placeholder="LucyLab token" autocomplete="off" />
+              </div>
+              <div class="form-group">
+                <label for="lucylabVoiceId">LucyLab Voice ID</label>
+                <input id="lucylabVoiceId" name="lucylabVoiceId" type="text" placeholder="e.g. huyen-chi" autocomplete="off" />
+              </div>
+            </div>
+
+            <!-- ElevenLabs Settings Block -->
+            <div id="elevenlabsSettingsBlock" class="provider-sub-block" style="display: none;">
+              <div class="form-group">
+                <label for="elevenlabsApiKey">ElevenLabs API Key</label>
+                <input id="elevenlabsApiKey" name="elevenlabsApiKey" type="password" placeholder="ElevenLabs API key" autocomplete="off" />
+              </div>
+              <div class="form-group">
+                <label for="elevenlabsVoiceId">ElevenLabs Voice ID</label>
+                <input id="elevenlabsVoiceId" name="elevenlabsVoiceId" type="text" placeholder="ElevenLabs Voice ID" autocomplete="off" />
+              </div>
+            </div>
+
+            <div class="section-divider" style="margin: 20px 0 15px;"></div>
+
+            <!-- Gemini Settings Block -->
+            <h4 class="sub-step-heading">Gemini Cover Background Generator (Optional)</h4>
+            <div class="form-group">
+              <label for="geminiApiKey">Gemini API Key</label>
+              <input id="geminiApiKey" name="geminiApiKey" type="password" placeholder="Gemini API Key" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="geminiImageModel">Gemini Image Model</label>
+              <input id="geminiImageModel" name="geminiImageModel" type="text" placeholder="gemini-2.5-flash-image" autocomplete="off" />
+            </div>
           </div>
-          <div class="settings-actions">
-            <p id="settingsStatus">Settings load from env until saved here.</p>
-            <button type="submit">Save Settings</button>
+
+          <!-- Step 3: Branding/Watermark Setup -->
+          <div class="wizard-content" data-step="3">
+            <h3 class="step-heading">Step 3: Branding & Watermark</h3>
+
+            <div class="switch-row" style="margin-bottom: 16px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33a1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+                <label for="tiktokEnabled" style="margin: 0; cursor: pointer;">Enable video watermark & outro</label>
+              </div>
+              <input id="tiktokEnabled" name="tiktokEnabled" type="checkbox" />
+            </div>
+
+            <div id="tiktokFieldsBlock" class="settings-grid">
+              <label for="tiktokDisplayName">Display name</label>
+              <input id="tiktokDisplayName" name="tiktokDisplayName" type="text" autocomplete="off" />
+
+              <label for="tiktokHandle">Handle</label>
+              <input id="tiktokHandle" name="tiktokHandle" type="text" autocomplete="off" />
+
+              <label for="tiktokFollowers">Followers</label>
+              <input id="tiktokFollowers" name="tiktokFollowers" type="text" autocomplete="off" />
+
+              <label for="tiktokAvatarUrl">Avatar URL</label>
+              <input id="tiktokAvatarUrl" name="tiktokAvatarUrl" type="url" placeholder="https://example.com/avatar.jpg" autocomplete="off" />
+            </div>
+
+            <!-- Dynamic Watermark Live Preview Mockup -->
+            <div class="watermark-preview-card">
+              <div class="preview-header">
+                <span>Watermark Live Preview</span>
+                <span class="outro-tag">Outro overlay</span>
+              </div>
+              <div class="video-overlay-mock">
+                <div class="video-overlay-art">
+                  <div class="mock-subtitle">Bản tin công nghệ nóng hổi hôm nay...</div>
+                  <div class="watermark-footer-row">
+                    <span class="music-note-icon">🎵</span>
+                    <span id="watermarkPreviewHandle" class="handle-text-mock">@congnghe24h</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </form>
+
+        <!-- Step 4: Run Video Generation -->
+        <div class="wizard-content" data-step="4">
+          <h3 class="step-heading">Step 4: Generate Video</h3>
+
+          <form id="generateForm" class="action-form" style="margin-top: 12px;">
+            <label for="articleUrl">Article URL</label>
+            <div class="field-row">
+              <input id="articleUrl" name="articleUrl" type="url" placeholder="https://vnexpress.net/bai-bao" autocomplete="off" />
+              <button type="submit">Generate</button>
+            </div>
+          </form>
+          
+          <div id="errorBanner" class="error-banner" hidden></div>
+          
+          <div id="progressPanel" class="progress-panel" hidden>
+            <div class="progress-step" data-stage="fetch"><span></span>Đang tải bài viết</div>
+            <div class="progress-step" data-stage="script"><span></span>Đang tạo kịch bản</div>
+            <div class="progress-step" data-stage="tts"><span></span>Đang tạo giọng đọc</div>
+            <div class="progress-step" data-stage="render"><span></span>Đang render video</div>
+            <div class="progress-step" data-stage="complete"><span></span>Hoàn thành</div>
+          </div>
+
+          <form id="pipelineForm" class="action-form" style="margin-top: 20px;">
+            <label for="scriptPath">Or run from existing script.json</label>
+            <div class="field-row">
+              <input id="scriptPath" name="scriptPath" type="text" placeholder="output/example/script.json" autocomplete="off" />
+              <button type="submit">Run</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Wizard Navigation Footer -->
+        <div class="wizard-footer">
+          <p id="settingsStatus">Loading settings...</p>
+          <div class="wizard-buttons">
+            <button type="button" id="prevStepBtn" class="btn-secondary" disabled>Back</button>
+            <button type="button" id="nextStepBtn">Next</button>
+          </div>
+        </div>
       </section>
 
       <section class="panel outputs-panel" aria-labelledby="outputs-title">

@@ -104,6 +104,9 @@ describe("local UI server helpers", () => {
         followers: "99 followers",
         avatarUrl: "https://example.com/avatar.png",
       },
+      llm: defaultUiSettings().llm,
+      tts: defaultUiSettings().tts,
+      gemini: defaultUiSettings().gemini,
     });
     await expect(readUiSettings()).resolves.toEqual(settings);
     expect(settingsToEnv(settings)).toMatchObject({

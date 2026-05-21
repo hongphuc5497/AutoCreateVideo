@@ -79,6 +79,23 @@ interface Job {
 
 export interface UiSettings {
   tiktok: TiktokConfig;
+  llm: {
+    provider: "anthropic" | "openai" | "deepseek";
+    apiKey: string;
+    model: string;
+    endpoint?: string;
+  };
+  tts: {
+    provider: "lucylab" | "elevenlabs";
+    lucylabApiKey?: string;
+    lucylabVoiceId?: string;
+    elevenlabsApiKey?: string;
+    elevenlabsVoiceId?: string;
+  };
+  gemini: {
+    apiKey?: string;
+    imageModel?: string;
+  };
 }
 
 const jobs = new Map<string, Job>();
@@ -192,6 +209,23 @@ export function defaultUiSettings(): UiSettings {
       followers: process.env.TIKTOK_FOLLOWERS ?? "1.2M followers",
       avatarUrl: process.env.TIKTOK_AVATAR_URL || undefined,
     },
+    llm: {
+      provider: (process.env.LLM_PROVIDER ?? "anthropic") as "anthropic" | "openai" | "deepseek",
+      apiKey: process.env.LLM_API_KEY ?? "",
+      model: process.env.LLM_MODEL ?? "claude-haiku-4-5-20251001",
+      endpoint: process.env.LLM_ENDPOINT ?? "",
+    },
+    tts: {
+      provider: (process.env.TTS_PROVIDER ?? "lucylab") as "lucylab" | "elevenlabs",
+      lucylabApiKey: process.env.VIETNAMESE_API_KEY ?? "",
+      lucylabVoiceId: process.env.VIETNAMESE_VOICEID ?? "",
+      elevenlabsApiKey: process.env.ELEVENLABS_API_KEY ?? "",
+      elevenlabsVoiceId: process.env.ELEVENLABS_VOICE_ID ?? "",
+    },
+    gemini: {
+      apiKey: process.env.GEMINI_API_KEY ?? "",
+      imageModel: process.env.GEMINI_IMAGE_MODEL ?? "gemini-2.5-flash-image",
+    },
   };
 }
 
@@ -219,6 +253,11 @@ function optionalUrl(value: unknown, name: string): string | undefined {
   return trimmed;
 }
 
+function optionalString(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  return String(value).trim();
+}
+
 export function normalizeUiSettings(input: unknown, fallback = defaultUiSettings()): UiSettings {
   const source = input && typeof input === "object" ? input as Record<string, unknown> : {};
   const tiktokInput = source.tiktok && typeof source.tiktok === "object"
@@ -228,6 +267,16 @@ export function normalizeUiSettings(input: unknown, fallback = defaultUiSettings
     ? tiktokInput.enabled
     : fallback.tiktok.enabled;
 
+  const llmInput = source.llm && typeof source.llm === "object"
+    ? source.llm as Record<string, unknown>
+    : {};
+  const ttsInput = source.tts && typeof source.tts === "object"
+    ? source.tts as Record<string, unknown>
+    : {};
+  const geminiInput = source.gemini && typeof source.gemini === "object"
+    ? source.gemini as Record<string, unknown>
+    : {};
+
   return {
     tiktok: {
       enabled,
@@ -235,6 +284,23 @@ export function normalizeUiSettings(input: unknown, fallback = defaultUiSettings
       handle: requiredString(tiktokInput.handle ?? fallback.tiktok.handle, "TikTok handle"),
       followers: requiredString(tiktokInput.followers ?? fallback.tiktok.followers, "TikTok followers"),
       avatarUrl: optionalUrl(tiktokInput.avatarUrl ?? fallback.tiktok.avatarUrl, "TikTok avatar URL"),
+    },
+    llm: {
+      provider: (llmInput.provider ?? fallback.llm.provider) as "anthropic" | "openai" | "deepseek",
+      apiKey: optionalString(llmInput.apiKey ?? fallback.llm.apiKey),
+      model: optionalString(llmInput.model ?? fallback.llm.model),
+      endpoint: optionalString(llmInput.endpoint ?? fallback.llm.endpoint),
+    },
+    tts: {
+      provider: (ttsInput.provider ?? fallback.tts.provider) as "lucylab" | "elevenlabs",
+      lucylabApiKey: optionalString(ttsInput.lucylabApiKey ?? fallback.tts.lucylabApiKey),
+      lucylabVoiceId: optionalString(ttsInput.lucylabVoiceId ?? fallback.tts.lucylabVoiceId),
+      elevenlabsApiKey: optionalString(ttsInput.elevenlabsApiKey ?? fallback.tts.elevenlabsApiKey),
+      elevenlabsVoiceId: optionalString(ttsInput.elevenlabsVoiceId ?? fallback.tts.elevenlabsVoiceId),
+    },
+    gemini: {
+      apiKey: optionalString(geminiInput.apiKey ?? fallback.gemini.apiKey),
+      imageModel: optionalString(geminiInput.imageModel ?? fallback.gemini.imageModel),
     },
   };
 }
@@ -259,13 +325,31 @@ export async function writeUiSettings(input: unknown): Promise<UiSettings> {
 }
 
 export function settingsToEnv(settings: UiSettings): NodeJS.ProcessEnv {
-  return {
+  const env: NodeJS.ProcessEnv = {
     TIKTOK_ENABLED: settings.tiktok.enabled ? "true" : "false",
     TIKTOK_DISPLAY_NAME: settings.tiktok.displayName,
     TIKTOK_HANDLE: settings.tiktok.handle,
     TIKTOK_FOLLOWERS: settings.tiktok.followers,
     TIKTOK_AVATAR_URL: settings.tiktok.avatarUrl ?? "",
   };
+  if (settings.llm) {
+    env.LLM_PROVIDER = settings.llm.provider;
+    env.LLM_API_KEY = settings.llm.apiKey;
+    env.LLM_MODEL = settings.llm.model;
+    env.LLM_ENDPOINT = settings.llm.endpoint;
+  }
+  if (settings.tts) {
+    env.TTS_PROVIDER = settings.tts.provider;
+    env.VIETNAMESE_API_KEY = settings.tts.lucylabApiKey;
+    env.VIETNAMESE_VOICEID = settings.tts.lucylabVoiceId;
+    env.ELEVENLABS_API_KEY = settings.tts.elevenlabsApiKey;
+    env.ELEVENLABS_VOICE_ID = settings.tts.elevenlabsVoiceId;
+  }
+  if (settings.gemini) {
+    env.GEMINI_API_KEY = settings.gemini.apiKey;
+    env.GEMINI_IMAGE_MODEL = settings.gemini.imageModel;
+  }
+  return env;
 }
 
 function createJob(input: string): Job {
