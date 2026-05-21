@@ -3,6 +3,7 @@ const state = {
   events: null,
   activeJob: null,
 };
+let currentStep = 1;
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -16,11 +17,38 @@ const artifactLinks = $("#artifactLinks");
 const errorBanner = $("#errorBanner");
 const progressPanel = $("#progressPanel");
 const settingsStatus = $("#settingsStatus");
+
+// LLM Fields
+const llmProvider = $("#llmProvider");
+const llmApiKey = $("#llmApiKey");
+const llmModel = $("#llmModel");
+const llmEndpoint = $("#llmEndpoint");
+
+// TTS Fields
+const ttsProvider = $("#ttsProvider");
+const lucylabApiKey = $("#lucylabApiKey");
+const lucylabVoiceId = $("#lucylabVoiceId");
+const elevenlabsApiKey = $("#elevenlabsApiKey");
+const elevenlabsVoiceId = $("#elevenlabsVoiceId");
+
+// Gemini Fields
+const geminiApiKey = $("#geminiApiKey");
+const geminiImageModel = $("#geminiImageModel");
+
+// TikTok Fields
 const tiktokEnabled = $("#tiktokEnabled");
 const tiktokDisplayName = $("#tiktokDisplayName");
 const tiktokHandle = $("#tiktokHandle");
 const tiktokFollowers = $("#tiktokFollowers");
 const tiktokAvatarUrl = $("#tiktokAvatarUrl");
+
+// Watermark Live Preview
+const watermarkPreviewHandle = $("#watermarkPreviewHandle");
+
+// Wizard Navigation
+const prevStepBtn = $("#prevStepBtn");
+const nextStepBtn = $("#nextStepBtn");
+
 const STAGES = ["fetch", "script", "tts", "render", "complete"];
 const ERROR_MESSAGES = {
   FETCH_FAILED: "Không đọc được bài viết từ URL này. Thử một URL khác.",
@@ -46,10 +74,124 @@ $("#pipelineForm").addEventListener("submit", (event) => {
 
 $("#settingsForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  await saveSettings();
+  if (validateStep(currentStep)) {
+    await saveSettings();
+  }
 });
 
 tiktokEnabled.addEventListener("change", updateTiktokInputs);
+tiktokHandle.addEventListener("input", updateWatermarkPreview);
+ttsProvider.addEventListener("change", updateTtsProviderBlock);
+
+prevStepBtn.addEventListener("click", () => {
+  if (currentStep > 1) {
+    setWizardStep(currentStep - 1);
+  }
+});
+
+nextStepBtn.addEventListener("click", async () => {
+  if (currentStep < 4) {
+    if (!validateStep(currentStep)) return;
+    const ok = await saveSettings();
+    if (ok) {
+      setWizardStep(currentStep + 1);
+    }
+  }
+});
+
+document.querySelectorAll(".wizard-step").forEach((stepEl) => {
+  stepEl.addEventListener("click", async () => {
+    const targetStep = parseInt(stepEl.dataset.step, 10);
+    if (targetStep === currentStep) return;
+
+    if (targetStep > currentStep) {
+      if (!validateStep(currentStep)) return;
+      const ok = await saveSettings();
+      if (!ok) return;
+    }
+
+    setWizardStep(targetStep);
+  });
+});
+
+function setWizardStep(step) {
+  if (step < 1 || step > 4) return;
+  currentStep = step;
+
+  // Update visual timeline dots
+  document.querySelectorAll(".wizard-step").forEach((el) => {
+    const s = parseInt(el.dataset.step, 10);
+    el.classList.toggle("active", s === currentStep);
+    el.classList.toggle("completed", s < currentStep);
+  });
+
+  // Toggle visible wizard panels
+  document.querySelectorAll(".wizard-content").forEach((el) => {
+    const s = parseInt(el.dataset.step, 10);
+    el.classList.toggle("active", s === currentStep);
+  });
+
+  // Enable/disable navigation buttons
+  prevStepBtn.disabled = currentStep === 1;
+  if (currentStep === 4) {
+    nextStepBtn.style.display = "none";
+  } else {
+    nextStepBtn.style.display = "inline-block";
+    nextStepBtn.textContent = "Next";
+  }
+}
+
+function validateStep(step) {
+  settingsStatus.textContent = "";
+
+  if (step === 1) {
+    const endpointVal = llmEndpoint.value.trim();
+    if (endpointVal && !/^https?:\/\/.+/.test(endpointVal)) {
+      settingsStatus.textContent = "Custom Endpoint must start with http:// or https://";
+      return false;
+    }
+  } else if (step === 2) {
+    // Gemini/TTS key validations can be kept loose as they support environment variable fallbacks
+  } else if (step === 3) {
+    if (tiktokEnabled.checked) {
+      if (!tiktokDisplayName.value.trim()) {
+        settingsStatus.textContent = "Display name is required when branding is enabled";
+        return false;
+      }
+      if (!tiktokHandle.value.trim()) {
+        settingsStatus.textContent = "Handle is required when branding is enabled";
+        return false;
+      }
+      if (!tiktokFollowers.value.trim()) {
+        settingsStatus.textContent = "Followers is required when branding is enabled";
+        return false;
+      }
+      const avatarVal = tiktokAvatarUrl.value.trim();
+      if (avatarVal && !/^https?:\/\/.+/.test(avatarVal)) {
+        settingsStatus.textContent = "Avatar URL must start with http:// or https://";
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function updateWatermarkPreview() {
+  const handleVal = tiktokHandle.value.trim() || "@handle";
+  const displayHandle = handleVal.startsWith("@") ? handleVal : `@${handleVal}`;
+  watermarkPreviewHandle.textContent = displayHandle;
+}
+
+function updateTtsProviderBlock() {
+  const val = ttsProvider.value;
+  if (val === "lucylab") {
+    $("#lucylabSettingsBlock").style.display = "block";
+    $("#elevenlabsSettingsBlock").style.display = "none";
+  } else if (val === "elevenlabs") {
+    $("#lucylabSettingsBlock").style.display = "none";
+    $("#elevenlabsSettingsBlock").style.display = "block";
+  }
+}
 
 async function loadSettings() {
   settingsStatus.textContent = "Loading settings...";
@@ -76,23 +218,66 @@ async function saveSettings() {
     if (!response.ok) throw new Error(data.error || "Failed to save settings");
     applySettings(data.settings);
     settingsStatus.textContent = "Settings saved";
+    return true;
   } catch (error) {
     settingsStatus.textContent = error.message;
+    return false;
   }
 }
 
 function applySettings(settings) {
-  const tiktok = settings.tiktok;
+  // LLM
+  const llm = settings.llm || {};
+  llmProvider.value = llm.provider || "anthropic";
+  llmApiKey.value = llm.apiKey || "";
+  llmModel.value = llm.model || "";
+  llmEndpoint.value = llm.endpoint || "";
+
+  // TTS
+  const tts = settings.tts || {};
+  ttsProvider.value = tts.provider || "lucylab";
+  lucylabApiKey.value = tts.lucylabApiKey || "";
+  lucylabVoiceId.value = tts.lucylabVoiceId || "";
+  elevenlabsApiKey.value = tts.elevenlabsApiKey || "";
+  elevenlabsVoiceId.value = tts.elevenlabsVoiceId || "";
+  updateTtsProviderBlock();
+
+  // Gemini
+  const gemini = settings.gemini || {};
+  geminiApiKey.value = gemini.apiKey || "";
+  geminiImageModel.value = gemini.imageModel || "";
+
+  // TikTok
+  const tiktok = settings.tiktok || {};
   tiktokEnabled.checked = Boolean(tiktok.enabled);
   tiktokDisplayName.value = tiktok.displayName || "";
   tiktokHandle.value = tiktok.handle || "";
   tiktokFollowers.value = tiktok.followers || "";
   tiktokAvatarUrl.value = tiktok.avatarUrl || "";
+
   updateTiktokInputs();
+  updateWatermarkPreview();
 }
 
 function readSettingsForm() {
   return {
+    llm: {
+      provider: llmProvider.value,
+      apiKey: llmApiKey.value.trim(),
+      model: llmModel.value.trim(),
+      endpoint: llmEndpoint.value.trim(),
+    },
+    tts: {
+      provider: ttsProvider.value,
+      lucylabApiKey: lucylabApiKey.value.trim(),
+      lucylabVoiceId: lucylabVoiceId.value.trim(),
+      elevenlabsApiKey: elevenlabsApiKey.value.trim(),
+      elevenlabsVoiceId: elevenlabsVoiceId.value.trim(),
+    },
+    gemini: {
+      apiKey: geminiApiKey.value.trim(),
+      imageModel: geminiImageModel.value.trim(),
+    },
     tiktok: {
       enabled: tiktokEnabled.checked,
       displayName: tiktokDisplayName.value.trim(),
@@ -109,6 +294,7 @@ function updateTiktokInputs() {
     input.disabled = disabled;
   });
 }
+
 
 async function loadOutputs() {
   outputCount.textContent = "Loading result folders...";
@@ -329,3 +515,4 @@ function escapeHtml(value) {
 
 loadSettings();
 loadOutputs();
+setWizardStep(1);
