@@ -13,12 +13,24 @@ const scriptPath = $("#scriptPath");
 const jobLog = $("#jobLog");
 const jobStatus = $("#jobStatus");
 const artifactLinks = $("#artifactLinks");
+const errorBanner = $("#errorBanner");
+const progressPanel = $("#progressPanel");
 const settingsStatus = $("#settingsStatus");
 const tiktokEnabled = $("#tiktokEnabled");
 const tiktokDisplayName = $("#tiktokDisplayName");
 const tiktokHandle = $("#tiktokHandle");
 const tiktokFollowers = $("#tiktokFollowers");
 const tiktokAvatarUrl = $("#tiktokAvatarUrl");
+const STAGES = ["fetch", "script", "tts", "render", "complete"];
+const ERROR_MESSAGES = {
+  FETCH_FAILED: "Không đọc được bài viết từ URL này. Thử một URL khác.",
+  FETCH_TOO_LARGE: "Bài viết quá dài. Thử bài ngắn hơn.",
+  LLM_ERROR: "Không tạo được kịch bản. Hãy báo cho người quản lý.",
+  TTS_ERROR: "Không tạo được giọng đọc. Hãy báo cho người quản lý.",
+  RENDER_ERROR: "Không render được video. Kiểm tra dung lượng trống hoặc thử lại.",
+  SERVER_MISCONFIGURED: "Máy chủ chưa được thiết lập đầy đủ. Hãy báo cho người quản lý.",
+  UNKNOWN: "Có lỗi xảy ra. Thử lại.",
+};
 
 $("#refreshOutputs").addEventListener("click", loadOutputs);
 
@@ -165,6 +177,9 @@ function renderOutputs() {
 async function startJob(endpoint, payload) {
   setJobMessage("Starting job...", "");
   artifactLinks.innerHTML = "";
+  hideError();
+  setBusy(true);
+  renderProgress("fetch");
 
   try {
     const response = await fetch(endpoint, {
@@ -177,6 +192,8 @@ async function startJob(endpoint, payload) {
     connectJob(data.job);
   } catch (error) {
     setJobMessage("Failed to start", error.message);
+    showError("UNKNOWN", error.message);
+    setBusy(false);
   }
 }
 
@@ -191,6 +208,8 @@ function connectJob(job) {
   events.addEventListener("snapshot", (event) => {
     const snapshot = JSON.parse(event.data);
     setJobMessage(formatStatus(snapshot), snapshot.logs.join("\n"));
+    if (snapshot.stage) renderProgress(snapshot.stage);
+    if (snapshot.error) showError(snapshot.error.code, snapshot.error.message);
     if (snapshot.status !== "running") finishJob(snapshot);
   });
 
@@ -201,9 +220,15 @@ function connectJob(job) {
   });
 
   events.addEventListener("progress", (event) => {
-    const { message } = JSON.parse(event.data);
+    const { stage, message } = JSON.parse(event.data);
+    renderProgress(stage);
     jobLog.textContent += `> ${message}\n`;
     jobLog.scrollTop = jobLog.scrollHeight;
+  });
+
+  events.addEventListener("error", (event) => {
+    const { code, message } = JSON.parse(event.data);
+    showError(code, message);
   });
 
   events.addEventListener("status", (event) => {
@@ -221,6 +246,13 @@ function connectJob(job) {
 function finishJob(job) {
   state.activeJob = job;
   jobStatus.textContent = formatStatus(job);
+  setBusy(false);
+  if (job.status === "success") {
+    hideError();
+    renderProgress("complete");
+  } else if (job.error) {
+    showError(job.error.code, job.error.message);
+  }
   if (state.events) {
     state.events.close();
     state.events = null;
@@ -252,6 +284,38 @@ function setJobMessage(status, log) {
 function formatStatus(job) {
   const exit = job.exitCode === undefined || job.exitCode === null ? "" : `, exit ${job.exitCode}`;
   return `pipeline ${job.status}${exit}`;
+}
+
+function renderProgress(currentStage) {
+  if (!currentStage) return;
+  progressPanel.hidden = false;
+  const visibleStage = currentStage === "setup" ? "fetch" : currentStage;
+  const currentIndex = STAGES.indexOf(visibleStage);
+  progressPanel.querySelectorAll(".progress-step").forEach((step) => {
+    const index = STAGES.indexOf(step.dataset.stage);
+    step.classList.toggle("done", currentIndex > index);
+    step.classList.toggle("active", currentIndex === index);
+  });
+}
+
+function showError(code, detail) {
+  const message = ERROR_MESSAGES[code] || ERROR_MESSAGES.UNKNOWN;
+  errorBanner.hidden = false;
+  errorBanner.innerHTML = `
+    <strong>${escapeHtml(message)}</strong>
+    <span>${escapeHtml(detail || code || "")}</span>
+  `;
+}
+
+function hideError() {
+  errorBanner.hidden = true;
+  errorBanner.innerHTML = "";
+}
+
+function setBusy(isBusy) {
+  document.querySelectorAll("#generateForm button, #pipelineForm button, .output-actions button").forEach((button) => {
+    button.disabled = isBusy;
+  });
 }
 
 function escapeHtml(value) {

@@ -9,6 +9,7 @@ import { ScriptSchema } from "./render/script-schema.js";
 import { loadConfig } from "./config.js";
 import type { TiktokConfig } from "./config.js";
 import { createLlmClient } from "./llm/llm-client.js";
+import { WebFetchError } from "./llm/web-fetcher.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const PROJECT_ROOT = resolve(__dirname, "..");
@@ -18,7 +19,21 @@ const UI_ROOT = join(PROJECT_ROOT, "src", "ui");
 const MAX_BODY_BYTES = 64 * 1024;
 
 type JobStatus = "running" | "success" | "failed";
-type JobEvent = "log" | "status" | "progress";
+type JobEvent = "log" | "status" | "progress" | "error";
+type JobStage = "setup" | "fetch" | "script" | "tts" | "render" | "complete";
+export type JobErrorCode =
+  | "FETCH_FAILED"
+  | "FETCH_TOO_LARGE"
+  | "LLM_ERROR"
+  | "TTS_ERROR"
+  | "RENDER_ERROR"
+  | "SERVER_MISCONFIGURED"
+  | "UNKNOWN";
+
+interface JobError {
+  code: JobErrorCode;
+  message: string;
+}
 
 interface OutputArtifacts {
   scriptJson: boolean;
@@ -58,6 +73,8 @@ interface Job {
   logs: string[];
   listeners: Set<(event: JobEvent, data: unknown) => void>;
   outputDir?: string;
+  stage?: JobStage;
+  error?: JobError;
 }
 
 export interface UiSettings {
@@ -283,14 +300,39 @@ function appendLog(job: Job, text: string): void {
   }
 }
 
-function emitProgress(job: Job, message: string): void {
+function emitProgress(job: Job, stage: JobStage, message: string): void {
+  job.stage = stage;
   job.logs.push(`[progress] ${message}`);
-  emit(job, "progress", { message });
+  emit(job, "progress", { stage, message });
+}
+
+export function classifyJobError(error: unknown): JobError {
+  if (error instanceof WebFetchError) {
+    return { code: error.code, message: error.message };
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  if (/LLM_API_KEY|No response from LLM|JSON parse|anthropic|openai|deepseek|rate limit/i.test(message)) {
+    return { code: "LLM_ERROR", message };
+  }
+  if (/VIETNAMESE_API_KEY|VIETNAMESE_VOICEID|ELEVENLABS_API_KEY|ELEVENLABS_VOICE_ID|ffmpeg|ffprobe|ENOENT/i.test(message)) {
+    return { code: "SERVER_MISCONFIGURED", message };
+  }
+  return { code: "UNKNOWN", message };
+}
+
+function failJob(job: Job, error: JobError, exitCode: number | null): void {
+  if (job.status !== "running") return;
+  job.error = error;
+  appendLog(job, `Job failed [${error.code}]: ${error.message}`);
+  emit(job, "error", error);
+  finishJob(job, "failed", exitCode);
 }
 
 async function spawnPipeline(job: Job, scriptPath: string): Promise<void> {
   const settings = await readUiSettings();
   const relPath = toOutputRelative(scriptPath);
+  emitProgress(job, "tts", "Generating voiceover...");
   appendLog(job, `$ npm run pipeline -- ${relPath}`);
   const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
   const child = spawn(npmCmd, ["run", "pipeline", "--", relPath], {
@@ -299,14 +341,26 @@ async function spawnPipeline(job: Job, scriptPath: string): Promise<void> {
     stdio: ["ignore", "pipe", "pipe"],
   });
 
-  child.stdout.on("data", (chunk) => appendLog(job, chunk.toString()));
-  child.stderr.on("data", (chunk) => appendLog(job, chunk.toString()));
+  const handleOutput = (text: string) => {
+    appendLog(job, text);
+    if (/Render with hyperframes/i.test(text)) {
+      emitProgress(job, "render", "Rendering video...");
+    } else if (/\bDone\b|=== Result ===/i.test(text)) {
+      emitProgress(job, "complete", "Video complete");
+    }
+  };
+  child.stdout.on("data", (chunk) => handleOutput(chunk.toString()));
+  child.stderr.on("data", (chunk) => handleOutput(chunk.toString()));
   child.on("error", (err) => {
-    appendLog(job, `Failed to start process: ${err.message}`);
-    finishJob(job, "failed", null);
+    failJob(job, { code: "SERVER_MISCONFIGURED", message: `Failed to start process: ${err.message}` }, null);
   });
   child.on("close", (code) => {
-    finishJob(job, code === 0 ? "success" : "failed", code);
+    if (code === 0) {
+      emitProgress(job, "complete", "Video complete");
+      finishJob(job, "success", code);
+    } else {
+      failJob(job, { code: "RENDER_ERROR", message: `Pipeline exited with code ${code}` }, code);
+    }
   });
 }
 
@@ -330,6 +384,8 @@ function serializeJob(job: Job) {
     startedAt: job.startedAt,
     finishedAt: job.finishedAt,
     outputDir: job.outputDir,
+    stage: job.stage,
+    error: job.error,
     logs: job.logs,
   };
 }
@@ -440,36 +496,34 @@ function timestamp(): string {
 
 async function runGenerateJob(job: Job, url: string, res: ServerResponse): Promise<void> {
   try {
-    emitProgress(job, "Creating output directory...");
+    emitProgress(job, "setup", "Creating output directory...");
     const slug = slugFromUrl(url);
     const ts = timestamp();
     const outputDir = join(OUTPUT_ROOT, `${slug}-${ts}`);
     await mkdir(outputDir, { recursive: true });
     job.outputDir = toOutputRelative(outputDir);
 
-    emitProgress(job, "Loading configuration...");
+    emitProgress(job, "setup", "Loading configuration...");
     const cfg = loadConfig();
 
-    emitProgress(job, "Starting LLM script generation...");
+    emitProgress(job, "script", "Starting LLM script generation...");
     const llmClient = createLlmClient(cfg);
     const rawScript = await llmClient.generateScript(url, (msg) => {
-      emitProgress(job, msg);
+      emitProgress(job, msg.startsWith("Fetching ") ? "fetch" : "script", msg);
     });
 
-    emitProgress(job, "Validating generated script...");
+    emitProgress(job, "script", "Validating generated script...");
     const script = ScriptSchema.parse(rawScript);
 
     const scriptPath = join(outputDir, "script.json");
     await writeFile(scriptPath, JSON.stringify(script, null, 2));
 
-    emitProgress(job, `Script written to ${toOutputRelative(scriptPath)}`);
-    emitProgress(job, "Starting pipeline...");
+    emitProgress(job, "script", `Script written to ${toOutputRelative(scriptPath)}`);
+    emitProgress(job, "tts", "Starting pipeline...");
 
     await spawnPipeline(job, scriptPath);
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    appendLog(job, `Generate failed: ${message}`);
-    finishJob(job, "failed", null);
+    failJob(job, classifyJobError(e), null);
   }
 }
 
@@ -514,8 +568,7 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
       job.outputDir = toOutputRelative(dirname(join(PROJECT_ROOT, scriptPath)));
       sendJson(res, 202, { job: serializeJob(job) });
       spawnPipeline(job, join(PROJECT_ROOT, scriptPath)).catch((e) => {
-        appendLog(job, `Failed to start pipeline: ${e instanceof Error ? e.message : String(e)}`);
-        finishJob(job, "failed", null);
+        failJob(job, classifyJobError(e), null);
       });
       return;
     }

@@ -24,6 +24,9 @@
 
 ---
 
+> [!IMPORTANT]
+> **Source of Truth**: [CONTEXT.md](file:///Users/hongphuc/repos/AutoCreateVideo/CONTEXT.md) is the absolute source of truth for all technical specifications, pipeline workflows, Vietnamese TTS phonetic rules, template schemas, and validation constraints. All other documentation should align with it.
+
 <div align="center">
 
 ## 🎥 Live Demo

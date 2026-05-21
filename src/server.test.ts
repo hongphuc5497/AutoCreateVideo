@@ -5,6 +5,7 @@ import {
   OUTPUT_ROOT,
   SETTINGS_PATH,
   assertExistingScriptPath,
+  classifyJobError,
   defaultUiSettings,
   listOutputs,
   normalizeUiSettings,
@@ -14,6 +15,7 @@ import {
   toOutputRelative,
   writeUiSettings,
 } from "./server.js";
+import { WebFetchError } from "./llm/web-fetcher.js";
 
 const FIXTURE_NAME = "ui-server-test-fixture";
 const FIXTURE_DIR = join(OUTPUT_ROOT, FIXTURE_NAME);
@@ -133,4 +135,16 @@ describe("local UI server helpers", () => {
       },
     })).toThrow(/HTTP\(S\)/);
   });
+
+  it("classifies fetch and provider errors for friend-ready UI messages", () => {
+    expect(classifyJobError(new WebFetchError("FETCH_FAILED", "HTTP 404"))).toEqual({
+      code: "FETCH_FAILED",
+      message: "HTTP 404",
+    });
+    expect(classifyJobError(new WebFetchError("FETCH_TOO_LARGE", "too big")).code).toBe("FETCH_TOO_LARGE");
+    expect(classifyJobError(new Error("Missing LLM_API_KEY")).code).toBe("LLM_ERROR");
+    expect(classifyJobError(new Error("Missing VIETNAMESE_API_KEY")).code).toBe("SERVER_MISCONFIGURED");
+    expect(classifyJobError(new Error("weird failure")).code).toBe("UNKNOWN");
+  });
+
 });

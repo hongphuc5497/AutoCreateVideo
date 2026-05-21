@@ -24,6 +24,9 @@
 
 ---
 
+> [!IMPORTANT]
+> **Tài liệu chuẩn (Source of Truth)**: File [CONTEXT.md](file:///Users/hongphuc/repos/AutoCreateVideo/CONTEXT.md) là nguồn thông tin gốc và chính xác nhất cho toàn bộ đặc tả kỹ thuật, luồng xử lý của pipeline, quy tắc phiên âm tiếng Việt cho TTS, schema template và các ràng buộc validate. Tất cả các tài liệu khác cần tuân thủ cấu trúc của file này.
+
 <div align="center">
 
 ## 🎥 Xem Demo Sản Phẩm
