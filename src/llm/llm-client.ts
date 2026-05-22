@@ -7,16 +7,30 @@ import { OpenAICompatibleClient } from "./openai-compatible-client.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SKILL_PATH = join(__dirname, "..", "..", ".claude", "skills", "create-news-video", "SKILL.md");
+const CONTEXT_PATH = join(__dirname, "..", "..", "CONTEXT.md");
 
-let _skillMd: string | null = null;
+let _skillPrompt: string | null = null;
 
 export function loadSkillPrompt(): string {
-  if (_skillMd) return _skillMd;
+  if (_skillPrompt) return _skillPrompt;
   if (!existsSync(SKILL_PATH)) {
     throw new Error(`SKILL.md not found at ${SKILL_PATH}`);
   }
-  _skillMd = readFileSync(SKILL_PATH, "utf8");
-  return _skillMd;
+  if (!existsSync(CONTEXT_PATH)) {
+    throw new Error(`CONTEXT.md not found at ${CONTEXT_PATH}`);
+  }
+
+  const skillMd = readFileSync(SKILL_PATH, "utf8");
+  const contextMd = readFileSync(CONTEXT_PATH, "utf8");
+  _skillPrompt = `${skillMd}
+
+---
+## Inlined Repository Context
+
+The skill's linked CONTEXT.md source of truth is already included below. Do not call web_fetch for file:// URLs or local project files; use web_fetch only for the remote HTTP(S) article URL.
+
+${contextMd}`;
+  return _skillPrompt;
 }
 
 export interface LlmClient {

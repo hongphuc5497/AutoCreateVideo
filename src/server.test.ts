@@ -6,6 +6,7 @@ import {
   SETTINGS_PATH,
   assertExistingScriptPath,
   classifyJobError,
+  classifyPipelineExit,
   defaultUiSettings,
   listOutputs,
   normalizeUiSettings,
@@ -16,6 +17,7 @@ import {
   writeUiSettings,
 } from "./server.js";
 import { WebFetchError } from "./llm/web-fetcher.js";
+import { z } from "zod";
 
 const FIXTURE_NAME = "ui-server-test-fixture";
 const FIXTURE_DIR = join(OUTPUT_ROOT, FIXTURE_NAME);
@@ -146,8 +148,22 @@ describe("local UI server helpers", () => {
     });
     expect(classifyJobError(new WebFetchError("FETCH_TOO_LARGE", "too big")).code).toBe("FETCH_TOO_LARGE");
     expect(classifyJobError(new Error("Missing LLM_API_KEY")).code).toBe("LLM_ERROR");
+    expect(classifyJobError(new z.ZodError([]))).toMatchObject({
+      code: "LLM_ERROR",
+    });
     expect(classifyJobError(new Error("Missing VIETNAMESE_API_KEY")).code).toBe("SERVER_MISCONFIGURED");
     expect(classifyJobError(new Error("weird failure")).code).toBe("UNKNOWN");
+  });
+
+  it("classifies pipeline child failures by the underlying log signal", () => {
+    expect(classifyPipelineExit([
+      "Error: ElevenLabs TTS failed (status 402): Free users cannot use library voices via the API.",
+    ], 1)).toEqual({
+      code: "TTS_ERROR",
+      message: "ElevenLabs TTS failed (status 402): Free users cannot use library voices via the API.",
+    });
+    expect(classifyPipelineExit(["Error: spawn ffmpeg ENOENT"], 1).code).toBe("SERVER_MISCONFIGURED");
+    expect(classifyPipelineExit(["some render crash"], 1).code).toBe("RENDER_ERROR");
   });
 
 });

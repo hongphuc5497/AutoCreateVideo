@@ -33,6 +33,18 @@ describe("fetchUrl", () => {
       .rejects.toMatchObject({ code: "FETCH_FAILED" });
   });
 
+  it("rejects non-HTTP URLs before calling fetch", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchUrl("file:///Users/hongphuc/repos/AutoCreateVideo/CONTEXT.md"))
+      .rejects.toMatchObject({
+        code: "FETCH_FAILED",
+        message: "Only HTTP(S) URLs can be fetched, got file:",
+      });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("throws FETCH_FAILED for empty extraction", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("<html><body>tiny</body></html>", { status: 200 })));
 

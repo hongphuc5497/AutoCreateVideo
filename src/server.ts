@@ -5,6 +5,7 @@ import { createReadStream } from "node:fs";
 import { access, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ZodError } from "zod";
 import { ScriptSchema } from "./render/script-schema.js";
 import { loadConfig } from "./config.js";
 import type { TiktokConfig } from "./config.js";
@@ -394,6 +395,9 @@ export function classifyJobError(error: unknown): JobError {
   if (error instanceof WebFetchError) {
     return { code: error.code, message: error.message };
   }
+  if (error instanceof ZodError) {
+    return { code: "LLM_ERROR", message: `Generated script failed schema validation: ${error.message}` };
+  }
 
   const message = error instanceof Error ? error.message : String(error);
   if (/LLM_API_KEY|No response from LLM|JSON parse|anthropic|openai|deepseek|rate limit/i.test(message)) {
@@ -403,6 +407,31 @@ export function classifyJobError(error: unknown): JobError {
     return { code: "SERVER_MISCONFIGURED", message };
   }
   return { code: "UNKNOWN", message };
+}
+
+function lastMatchingLog(logs: string[], pattern: RegExp): string | undefined {
+  for (let i = logs.length - 1; i >= 0; i--) {
+    const line = logs[i];
+    if (pattern.test(line)) return line.replace(/^Error:\s*/, "");
+  }
+  return undefined;
+}
+
+export function classifyPipelineExit(logs: string[], exitCode: number | null): JobError {
+  const ttsMessage = lastMatchingLog(
+    logs,
+    /ElevenLabs TTS failed|LucyLab .*error|LucyLab export .*failed|LucyLab returned|TTS failed/i,
+  );
+  if (ttsMessage) {
+    return { code: "TTS_ERROR", message: ttsMessage };
+  }
+
+  const misconfiguredMessage = lastMatchingLog(logs, /ffmpeg|ffprobe|ENOENT|No bundled avatar/i);
+  if (misconfiguredMessage) {
+    return { code: "SERVER_MISCONFIGURED", message: misconfiguredMessage };
+  }
+
+  return { code: "RENDER_ERROR", message: `Pipeline exited with code ${exitCode}` };
 }
 
 function failJob(job: Job, error: JobError, exitCode: number | null): void {
@@ -443,7 +472,7 @@ async function spawnPipeline(job: Job, scriptPath: string): Promise<void> {
       emitProgress(job, "complete", "Video complete");
       finishJob(job, "success", code);
     } else {
-      failJob(job, { code: "RENDER_ERROR", message: `Pipeline exited with code ${code}` }, code);
+      failJob(job, classifyPipelineExit(job.logs, code), code);
     }
   });
 }

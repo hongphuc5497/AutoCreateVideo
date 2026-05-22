@@ -43,7 +43,18 @@ export function extractTextFromHtml(html: string): string {
 
 export async function fetchUrl(url: string): Promise<{ content: string }> {
   try {
-    const resp = await fetch(url, {
+    const target = url.trim();
+    let parsed: URL;
+    try {
+      parsed = new URL(target);
+    } catch {
+      throw new WebFetchError("FETCH_FAILED", `Invalid URL: ${url}`);
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new WebFetchError("FETCH_FAILED", `Only HTTP(S) URLs can be fetched, got ${parsed.protocol}`);
+    }
+
+    const resp = await fetch(target, {
       headers: { "User-Agent": "AutoCreateVideo/1.0" },
       signal: AbortSignal.timeout(15_000),
     });
@@ -62,7 +73,7 @@ export async function fetchUrl(url: string): Promise<{ content: string }> {
       ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)?.[1]
       ?? null;
 
-    let result = `URL: ${url}\nContent (text extracted from HTML):\n${text.slice(0, LLM_CONTENT_CHAR_LIMIT)}`;
+    let result = `URL: ${target}\nContent (text extracted from HTML):\n${text.slice(0, LLM_CONTENT_CHAR_LIMIT)}`;
     if (ogImage) {
       result += `\n\nog:image URL: ${ogImage}`;
     }
