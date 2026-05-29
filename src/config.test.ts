@@ -41,11 +41,11 @@ describe("loadConfig", () => {
 
   describe("LucyLab provider (default)", () => {
     it("reads LucyLab env vars when no provider specified", () => {
-      process.env.VIETNAMESE_API_KEY = "sk_test_abc";
+      process.env.VIETNAMESE_API_KEY = "test-api-key";
       process.env.VIETNAMESE_VOICEID = "voice123";
       const cfg = loadConfig();
       expect(cfg.ttsProvider).toBe("lucylab");
-      expect(cfg.lucylabApiKey).toBe("sk_test_abc");
+      expect(cfg.lucylabApiKey).toBe("test-api-key");
       expect(cfg.lucylabVoiceId).toBe("voice123");
     });
 

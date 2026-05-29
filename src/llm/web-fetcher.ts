@@ -27,7 +27,36 @@ export function extractTextFromHtml(html: string): string {
 
 export async function fetchUrl(url: string): Promise<{ content: string }> {
   try {
+<<<<<<< Updated upstream
     const resp = await fetch(url, {
+=======
+    const target = url.trim();
+    let parsed: URL;
+    try {
+      parsed = new URL(target);
+    } catch {
+      throw new WebFetchError("FETCH_FAILED", `Invalid URL: ${url}`);
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new WebFetchError("FETCH_FAILED", `Only HTTP(S) URLs can be fetched, got ${parsed.protocol}`);
+    }
+
+    // Block internal/private network addresses (SSRF prevention)
+    const BLOCKED_HOSTS = [
+      "localhost", "127.0.0.1", "::1", "0.0.0.0",
+      "169.254.169.254",               // AWS IMDS / link-local
+      "metadata.google.internal",      // GCP metadata
+    ];
+    const hostname = parsed.hostname.toLowerCase();
+    if (BLOCKED_HOSTS.includes(hostname) ||
+        hostname.startsWith("10.") ||
+        hostname.startsWith("192.168.") ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) {
+      throw new WebFetchError("FETCH_FAILED", "Internal and private network addresses are not allowed");
+    }
+
+    const resp = await fetch(target, {
+>>>>>>> Stashed changes
       headers: { "User-Agent": "AutoCreateVideo/1.0" },
       signal: AbortSignal.timeout(15_000),
     });

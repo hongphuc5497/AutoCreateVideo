@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { LucylabClient } from "./lucylab-client.js";
 
 const cfg = {
-  apiKey: "sk_test_abc",
+  apiKey: "test-api-key",
   voiceId: "v1",
   endpoint: "https://api.lucylab.io/json-rpc",
   pollIntervalMs: 50,

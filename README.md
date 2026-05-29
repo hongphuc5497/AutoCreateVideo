@@ -261,7 +261,7 @@ Open `.env.local` and pick **one of two providers**:
 
 ```env
 TTS_PROVIDER=lucylab
-VIETNAMESE_API_KEY=sk_live_xxxxxxxxxxxxxxxxxxxx
+VIETNAMESE_API_KEY=your_lucylab_api_key_here
 VIETNAMESE_VOICEID=22charvoiceiduuidhere
 ```
 

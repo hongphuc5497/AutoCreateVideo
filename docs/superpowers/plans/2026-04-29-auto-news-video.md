@@ -159,7 +159,7 @@ output/
 
 ```
 # LucyLab.io Vietnamese TTS (https://lucylab.io)
-VIETNAMESE_API_KEY=sk_live_xxxxxxxxxxxxxxxxxxxx
+VIETNAMESE_API_KEY=your_lucylab_api_key_here
 VIETNAMESE_VOICEID=22charvoiceiduuidhere
 
 # Optional overrides
@@ -504,10 +504,10 @@ describe("loadConfig", () => {
   });
 
   it("reads required env vars", () => {
-    process.env.VIETNAMESE_API_KEY = "sk_test_abc";
+    process.env.VIETNAMESE_API_KEY = "test-api-key";
     process.env.VIETNAMESE_VOICEID = "voice123";
     const cfg = loadConfig();
-    expect(cfg.apiKey).toBe("sk_test_abc");
+    expect(cfg.apiKey).toBe("test-api-key");
     expect(cfg.voiceId).toBe("voice123");
   });
 
@@ -759,7 +759,7 @@ import { tmpdir } from "node:os";
 import { LucylabClient } from "./lucylab-client.js";
 
 const cfg = {
-  apiKey: "sk_test_abc",
+  apiKey: "test-api-key",
   voiceId: "v1",
   endpoint: "https://api.lucylab.io/json-rpc",
   pollIntervalMs: 50,
