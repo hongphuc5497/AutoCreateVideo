@@ -2,9 +2,19 @@ const state = {
   outputs: [],
   events: null,
   activeJob: null,
+  demoMode: false,
 };
 
 const $ = (selector) => document.querySelector(selector);
+const scriptPathname = new URL(document.currentScript?.src || window.location.href).pathname;
+const PUBLIC_BASE_PATH = scriptPathname.endsWith("/app.js")
+  ? scriptPathname.slice(0, -"/app.js".length)
+  : "";
+
+function appPath(path) {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return `${PUBLIC_BASE_PATH}${normalized}`;
+}
 
 const outputsList = $("#outputsList");
 const outputCount = $("#outputCount");
@@ -24,12 +34,12 @@ $("#refreshOutputs").addEventListener("click", loadOutputs);
 
 $("#generateForm").addEventListener("submit", (event) => {
   event.preventDefault();
-  startJob("/api/generate", { url: articleUrl.value.trim() });
+  startJob(appPath("/api/generate"), { url: articleUrl.value.trim() });
 });
 
 $("#pipelineForm").addEventListener("submit", (event) => {
   event.preventDefault();
-  startJob("/api/pipeline", { scriptPath: scriptPath.value.trim() });
+  startJob(appPath("/api/pipeline"), { scriptPath: scriptPath.value.trim() });
 });
 
 $("#settingsForm").addEventListener("submit", async (event) => {
@@ -42,20 +52,26 @@ tiktokEnabled.addEventListener("change", updateTiktokInputs);
 async function loadSettings() {
   settingsStatus.textContent = "Loading settings...";
   try {
-    const response = await fetch("/api/settings");
+    const response = await fetch(appPath("/api/settings"));
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Failed to load settings");
+    state.demoMode = Boolean(data.demoMode);
     applySettings(data.settings);
-    settingsStatus.textContent = "Settings ready";
+    applyDemoMode();
+    settingsStatus.textContent = state.demoMode ? "Public demo mode: settings are read-only" : "Settings ready";
   } catch (error) {
     settingsStatus.textContent = error.message;
   }
 }
 
 async function saveSettings() {
+  if (state.demoMode) {
+    settingsStatus.textContent = "Public demo mode: settings are read-only";
+    return false;
+  }
   settingsStatus.textContent = "Saving settings...";
   try {
-    const response = await fetch("/api/settings", {
+    const response = await fetch(appPath("/api/settings"), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(readSettingsForm()),
@@ -67,6 +83,20 @@ async function saveSettings() {
   } catch (error) {
     settingsStatus.textContent = error.message;
   }
+}
+
+function applyDemoMode() {
+  if (!state.demoMode) return;
+  document
+    .querySelectorAll("#settingsForm input, #settingsForm select, #generateForm input, #pipelineForm input")
+    .forEach((field) => {
+      field.disabled = true;
+    });
+  document
+    .querySelectorAll("#settingsForm button, #generateForm button, #pipelineForm button")
+    .forEach((button) => {
+      button.disabled = true;
+    });
 }
 
 function applySettings(settings) {
@@ -102,7 +132,7 @@ async function loadOutputs() {
   outputCount.textContent = "Loading result folders...";
   outputsList.innerHTML = "";
   try {
-    const response = await fetch("/api/outputs");
+    const response = await fetch(appPath("/api/outputs"));
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Failed to load outputs");
     state.outputs = data.outputs;
@@ -143,7 +173,7 @@ function renderOutputs() {
           <div class="badges">${badges}</div>
         </div>
         <div class="output-actions">
-          <button type="button" data-action="run">Run script</button>
+          <button type="button" data-action="run" ${state.demoMode ? "disabled" : ""}>Run script</button>
           <div class="links">${links}</div>
         </div>
       </article>
@@ -156,7 +186,7 @@ function renderOutputs() {
       const selectedScriptPath = card.dataset.scriptPath;
       scriptPath.value = selectedScriptPath;
       if (button.dataset.action === "run") {
-        startJob("/api/pipeline", { scriptPath: selectedScriptPath });
+        startJob(appPath("/api/pipeline"), { scriptPath: selectedScriptPath });
       }
     });
   });
@@ -185,7 +215,7 @@ function connectJob(job) {
   if (state.events) state.events.close();
 
   setJobMessage("running", job.logs.join("\n"));
-  const events = new EventSource(`/api/jobs/${job.id}/events`);
+  const events = new EventSource(appPath(`/api/jobs/${job.id}/events`));
   state.events = events;
 
   events.addEventListener("snapshot", (event) => {
@@ -237,9 +267,9 @@ function renderArtifactLinks(job) {
   }
   const encoded = dir.replace(/^output\//, "").split("/").map(encodeURIComponent).join("/");
   artifactLinks.innerHTML = `
-    <a href="/outputs/${encoded}/video.mp4" target="_blank" rel="noreferrer">video.mp4</a>
-    <a href="/outputs/${encoded}/voice.mp3" target="_blank" rel="noreferrer">voice.mp3</a>
-    <a href="/outputs/${encoded}/script.txt" target="_blank" rel="noreferrer">script.txt</a>
+    <a href="${appPath(`/outputs/${encoded}/video.mp4`)}" target="_blank" rel="noreferrer">video.mp4</a>
+    <a href="${appPath(`/outputs/${encoded}/voice.mp3`)}" target="_blank" rel="noreferrer">voice.mp3</a>
+    <a href="${appPath(`/outputs/${encoded}/script.txt`)}" target="_blank" rel="noreferrer">script.txt</a>
   `;
 }
 
@@ -254,6 +284,41 @@ function formatStatus(job) {
   return `pipeline ${job.status}${exit}`;
 }
 
+<<<<<<< Updated upstream
+=======
+function renderProgress(currentStage) {
+  if (!currentStage) return;
+  progressPanel.hidden = false;
+  const visibleStage = currentStage === "setup" ? "fetch" : currentStage;
+  const currentIndex = STAGES.indexOf(visibleStage);
+  progressPanel.querySelectorAll(".progress-step").forEach((step) => {
+    const index = STAGES.indexOf(step.dataset.stage);
+    step.classList.toggle("done", currentIndex > index);
+    step.classList.toggle("active", currentIndex === index);
+  });
+}
+
+function showError(code, detail) {
+  const message = ERROR_MESSAGES[code] || ERROR_MESSAGES.UNKNOWN;
+  errorBanner.hidden = false;
+  errorBanner.innerHTML = `
+    <strong>${escapeHtml(message)}</strong>
+    <span>${escapeHtml(detail || code || "")}</span>
+  `;
+}
+
+function hideError() {
+  errorBanner.hidden = true;
+  errorBanner.innerHTML = "";
+}
+
+function setBusy(isBusy) {
+  document.querySelectorAll("#generateForm button, #pipelineForm button, .output-actions button").forEach((button) => {
+    button.disabled = state.demoMode || isBusy;
+  });
+}
+
+>>>>>>> Stashed changes
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")

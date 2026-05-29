@@ -16,6 +16,7 @@ export const OUTPUT_ROOT = join(PROJECT_ROOT, "output");
 export const SETTINGS_PATH = join(OUTPUT_ROOT, ".ui-settings.json");
 const UI_ROOT = join(PROJECT_ROOT, "src", "ui");
 const MAX_BODY_BYTES = 64 * 1024;
+const PUBLIC_BASE_PATH = normalizePublicBasePath(process.env.PUBLIC_BASE_PATH);
 
 type JobStatus = "running" | "success" | "failed";
 type JobEvent = "log" | "status" | "progress";
@@ -66,6 +67,56 @@ export interface UiSettings {
 
 const jobs = new Map<string, Job>();
 let runningJob: Job | null = null;
+
+function normalizePublicBasePath(value: string | undefined): string {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "/") return "";
+  return `/${trimmed.replace(/^\/+|\/+$/g, "")}`;
+}
+
+export function publicPath(path: string): string {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return `${PUBLIC_BASE_PATH}${normalized}`;
+}
+
+function stripPublicBasePath(pathname: string): string {
+  if (!PUBLIC_BASE_PATH) return pathname;
+  if (pathname === PUBLIC_BASE_PATH) return "/";
+  if (pathname.startsWith(`${PUBLIC_BASE_PATH}/`)) {
+    return pathname.slice(PUBLIC_BASE_PATH.length) || "/";
+  }
+  return pathname;
+}
+
+export function isPublicDemoMode(): boolean {
+  return boolFromEnv("PUBLIC_DEMO_MODE", false);
+}
+
+function redactSecret(value: string | undefined): string {
+  return value ? "REDACTED" : "";
+}
+
+function redactUiSettings(settings: UiSettings): UiSettings {
+  return {
+    ...settings,
+    llm: {
+      ...settings.llm,
+      apiKey: redactSecret(settings.llm.apiKey),
+    },
+    tts: {
+      ...settings.tts,
+      lucylabApiKey: redactSecret(settings.tts.lucylabApiKey),
+      lucylabVoiceId: redactSecret(settings.tts.lucylabVoiceId),
+      elevenlabsApiKey: redactSecret(settings.tts.elevenlabsApiKey),
+      elevenlabsVoiceId: redactSecret(settings.tts.elevenlabsVoiceId),
+    },
+    gemini: {
+      ...settings.gemini,
+      apiKey: redactSecret(settings.gemini.apiKey),
+    },
+  };
+}
 
 export function safeOutputPath(input: string): string {
   if (!input || typeof input !== "string") {
@@ -145,10 +196,10 @@ export async function listOutputs(): Promise<OutputItem[]> {
         videoMp4: `${outputDir}/video.mp4`,
       },
       urls: {
-        scriptJson: `/outputs/${encodeURIComponent(name)}/script.json`,
-        scriptTxt: `/outputs/${encodeURIComponent(name)}/script.txt`,
-        voiceMp3: `/outputs/${encodeURIComponent(name)}/voice.mp3`,
-        videoMp4: `/outputs/${encodeURIComponent(name)}/video.mp4`,
+        scriptJson: publicPath(`/outputs/${encodeURIComponent(name)}/script.json`),
+        scriptTxt: publicPath(`/outputs/${encodeURIComponent(name)}/script.txt`),
+        voiceMp3: publicPath(`/outputs/${encodeURIComponent(name)}/voice.mp3`),
+        videoMp4: publicPath(`/outputs/${encodeURIComponent(name)}/video.mp4`),
       },
     };
   }));
@@ -475,25 +526,38 @@ async function runGenerateJob(job: Job, url: string, res: ServerResponse): Promi
 
 export async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
+  const pathname = stripPublicBasePath(url.pathname);
 
   try {
-    if (req.method === "GET" && url.pathname === "/api/outputs") {
+    if (req.method === "GET" && pathname === "/api/outputs") {
       sendJson(res, 200, { outputs: await listOutputs() });
       return;
     }
 
-    if (req.method === "GET" && url.pathname === "/api/settings") {
-      sendJson(res, 200, { settings: await readUiSettings() });
+    if (req.method === "GET" && pathname === "/api/settings") {
+      const settings = await readUiSettings();
+      sendJson(res, 200, {
+        demoMode: isPublicDemoMode(),
+        settings: isPublicDemoMode() ? redactUiSettings(settings) : settings,
+      });
       return;
     }
 
-    if (req.method === "PUT" && url.pathname === "/api/settings") {
+    if (req.method === "PUT" && pathname === "/api/settings") {
+      if (isPublicDemoMode()) {
+        sendError(res, 403, "Settings are read-only in public demo mode");
+        return;
+      }
       const body = await readJsonBody(req);
       sendJson(res, 200, { settings: await writeUiSettings(body) });
       return;
     }
 
-    if (req.method === "POST" && url.pathname === "/api/generate") {
+    if (req.method === "POST" && pathname === "/api/generate") {
+      if (isPublicDemoMode()) {
+        sendError(res, 403, "Video generation is disabled in public demo mode");
+        return;
+      }
       const body = await readJsonBody(req);
       const articleUrl = String(body.url || "").trim();
       if (!articleUrl || !/^https?:\/\/.+/.test(articleUrl)) {
@@ -507,7 +571,11 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
       return;
     }
 
-    if (req.method === "POST" && url.pathname === "/api/pipeline") {
+    if (req.method === "POST" && pathname === "/api/pipeline") {
+      if (isPublicDemoMode()) {
+        sendError(res, 403, "Pipeline runs are disabled in public demo mode");
+        return;
+      }
       const body = await readJsonBody(req);
       const scriptPath = await assertExistingScriptPath(body.scriptPath);
       const job = createJob(scriptPath);
@@ -520,7 +588,7 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
       return;
     }
 
-    const eventsMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/events$/);
+    const eventsMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/events$/);
     if (req.method === "GET" && eventsMatch) {
       const job = jobs.get(eventsMatch[1]);
       if (!job) {
@@ -543,13 +611,13 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
       return;
     }
 
-    if (req.method === "GET" && url.pathname.startsWith("/outputs/")) {
-      await serveStatic(res, OUTPUT_ROOT, url.pathname.slice("/outputs/".length));
+    if (req.method === "GET" && pathname.startsWith("/outputs/")) {
+      await serveStatic(res, OUTPUT_ROOT, pathname.slice("/outputs/".length));
       return;
     }
 
     if (req.method === "GET") {
-      const staticPath = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
+      const staticPath = pathname === "/" ? "index.html" : pathname.slice(1);
       await serveStatic(res, UI_ROOT, staticPath);
       return;
     }
@@ -564,9 +632,10 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT ?? 4317);
+  const host = process.env.HOST ?? "127.0.0.1";
   createServer((req, res) => {
     handleRequest(req, res).catch((e) => sendError(res, 500, e instanceof Error ? e.message : String(e)));
-  }).listen(port, "127.0.0.1", () => {
-    console.log(`Auto News Video UI: http://127.0.0.1:${port}`);
+  }).listen(port, host, () => {
+    console.log(`Auto News Video UI: http://${host}:${port}${PUBLIC_BASE_PATH || "/"}`);
   });
 }

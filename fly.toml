@@ -1,0 +1,28 @@
+app = "hongphuc-news-video-creating"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  HOST = "0.0.0.0"
+  PORT = "4317"
+  PUBLIC_BASE_PATH = "/news-video-creating"
+  PUBLIC_DEMO_MODE = "1"
+  TIKTOK_ENABLED = "true"
+  TIKTOK_DISPLAY_NAME = "Cong nghe 24h"
+  TIKTOK_HANDLE = "@congnghe24h"
+  TIKTOK_FOLLOWERS = "1.2M followers"
+
+[http_service]
+  internal_port = 4317
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1

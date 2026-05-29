@@ -320,7 +320,7 @@ Mở `.env.local` và chọn **một trong hai provider**:
 
 ```env
 TTS_PROVIDER=lucylab
-VIETNAMESE_API_KEY=sk_live_xxxxxxxxxxxxxxxxxxxx
+VIETNAMESE_API_KEY=your_lucylab_api_key_here
 VIETNAMESE_VOICEID=22charvoiceiduuidhere
 ```
 
@@ -332,7 +332,7 @@ VIETNAMESE_VOICEID=22charvoiceiduuidhere
 
 ```env
 TTS_PROVIDER=elevenlabs
-ELEVENLABS_API_KEY=sk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
 ELEVENLABS_VOICE_ID=EXAVITQu4vr4xnSDxMaL
 ELEVENLABS_MODEL_ID=eleven_multilingual_v2
 ```
