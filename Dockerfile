@@ -5,6 +5,7 @@ COPY package*.json ./
 RUN npm ci
 COPY . .
 RUN npm run build
+RUN npm prune --production
 
 # ── Runtime stage ─────────────────────────────────────────────────────────
 FROM node:26-bookworm-slim
