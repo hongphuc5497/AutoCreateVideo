@@ -18,7 +18,9 @@ export const OUTPUT_ROOT = join(PROJECT_ROOT, "output");
 export const SETTINGS_PATH = join(OUTPUT_ROOT, ".ui-settings.json");
 const UI_ROOT = join(PROJECT_ROOT, "src", "ui");
 const MAX_BODY_BYTES = 64 * 1024;
-const PUBLIC_BASE_PATH = normalizePublicBasePath(process.env.PUBLIC_BASE_PATH);
+const PUBLIC_BASE_PATH = process.env.PUBLIC_BASE_PATH
+  ? `/${process.env.PUBLIC_BASE_PATH.replace(/^\/+|\/+$/g, "")}`
+  : "";
 
 type JobStatus = "running" | "success" | "failed";
 type JobEvent = "log" | "status" | "progress" | "error";
