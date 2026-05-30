@@ -730,9 +730,10 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT ?? 4317);
+  const host = process.env.HOST ?? "127.0.0.1";
   createServer((req, res) => {
     handleRequest(req, res).catch((e) => sendError(res, 500, e instanceof Error ? e.message : String(e)));
-  }).listen(port, "127.0.0.1", () => {
-    console.log(`Auto News Video UI: http://127.0.0.1:${port}`);
+  }).listen(port, host, () => {
+    console.log(`Auto News Video UI: http://${host}:${port}${PUBLIC_BASE_PATH || "/"}`);
   });
 }
