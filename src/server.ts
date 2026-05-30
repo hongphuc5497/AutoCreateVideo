@@ -18,6 +18,7 @@ export const OUTPUT_ROOT = join(PROJECT_ROOT, "output");
 export const SETTINGS_PATH = join(OUTPUT_ROOT, ".ui-settings.json");
 const UI_ROOT = join(PROJECT_ROOT, "src", "ui");
 const MAX_BODY_BYTES = 64 * 1024;
+const PUBLIC_BASE_PATH = normalizePublicBasePath(process.env.PUBLIC_BASE_PATH);
 
 type JobStatus = "running" | "success" | "failed";
 type JobEvent = "log" | "status" | "progress" | "error";
@@ -730,10 +731,10 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT ?? 4317);
-  const host = process.env.HOST ?? "127.0.0.1";
+  const host = process.env.HOST || "0.0.0.0";
   createServer((req, res) => {
     handleRequest(req, res).catch((e) => sendError(res, 500, e instanceof Error ? e.message : String(e)));
   }).listen(port, host, () => {
-    console.log(`Auto News Video UI: http://${host}:${port}${PUBLIC_BASE_PATH || "/"}`);
+    console.log(`Auto News Video UI: http://${host}:${port}`);
   });
 }
