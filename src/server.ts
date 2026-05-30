@@ -734,7 +734,13 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT ?? 4317);
   const host = process.env.HOST || "0.0.0.0";
+  const basePath = (process.env.PUBLIC_BASE_PATH || "").replace(/\/+$/, "");
   createServer((req, res) => {
+    // Strip public base path from incoming requests
+    if (basePath && req.url) {
+      if (req.url === basePath) req.url = "/";
+      else if (req.url.startsWith(basePath + "/")) req.url = req.url.slice(basePath.length);
+    }
     handleRequest(req, res).catch((e) => sendError(res, 500, e instanceof Error ? e.message : String(e)));
   }).listen(port, host, () => {
     console.log(`Auto News Video UI: http://${host}:${port}`);
