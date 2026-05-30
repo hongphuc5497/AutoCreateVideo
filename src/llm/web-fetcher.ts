@@ -1,3 +1,19 @@
+export type WebFetchErrorCode = "FETCH_FAILED" | "FETCH_TOO_LARGE";
+
+export class WebFetchError extends Error {
+  constructor(
+    public readonly code: WebFetchErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = "WebFetchError";
+  }
+}
+
+const CONTENT_CHAR_LIMIT = 20_000;
+const LLM_CONTENT_CHAR_LIMIT = 8_000;
+const MIN_ARTICLE_TEXT_CHARS = 200;
+
 export function extractTextFromHtml(html: string): string {
   const text = html
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
@@ -27,9 +43,6 @@ export function extractTextFromHtml(html: string): string {
 
 export async function fetchUrl(url: string): Promise<{ content: string }> {
   try {
-<<<<<<< Updated upstream
-    const resp = await fetch(url, {
-=======
     const target = url.trim();
     let parsed: URL;
     try {
@@ -56,28 +69,34 @@ export async function fetchUrl(url: string): Promise<{ content: string }> {
     }
 
     const resp = await fetch(target, {
->>>>>>> Stashed changes
       headers: { "User-Agent": "AutoCreateVideo/1.0" },
       signal: AbortSignal.timeout(15_000),
     });
     if (!resp.ok) {
-      return { content: `Failed to fetch: HTTP ${resp.status} ${resp.statusText}` };
+      throw new WebFetchError("FETCH_FAILED", `HTTP ${resp.status} ${resp.statusText}`);
     }
     const html = await resp.text();
     const text = extractTextFromHtml(html);
+    if (text.length < MIN_ARTICLE_TEXT_CHARS) {
+      throw new WebFetchError("FETCH_FAILED", "Article text is empty or too short after extraction");
+    }
+    if (text.length > CONTENT_CHAR_LIMIT) {
+      throw new WebFetchError("FETCH_TOO_LARGE", `Article text is too large (${text.length} chars)`);
+    }
     const ogImage = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1]
       ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)?.[1]
       ?? null;
 
-    let result = `URL: ${url}\nContent (text extracted from HTML):\n${text.slice(0, 8000)}`;
+    let result = `URL: ${target}\nContent (text extracted from HTML):\n${text.slice(0, LLM_CONTENT_CHAR_LIMIT)}`;
     if (ogImage) {
       result += `\n\nog:image URL: ${ogImage}`;
     }
-    if (text.length > 8000) {
-      result += `\n\n[Content truncated at 8000 chars, original was ${text.length} chars]`;
+    if (text.length > LLM_CONTENT_CHAR_LIMIT) {
+      result += `\n\n[Content truncated at ${LLM_CONTENT_CHAR_LIMIT} chars, original was ${text.length} chars]`;
     }
     return { content: result };
   } catch (e) {
-    return { content: `Fetch error: ${e instanceof Error ? e.message : String(e)}` };
+    if (e instanceof WebFetchError) throw e;
+    throw new WebFetchError("FETCH_FAILED", e instanceof Error ? e.message : String(e));
   }
 }
