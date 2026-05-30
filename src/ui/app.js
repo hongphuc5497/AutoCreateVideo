@@ -284,8 +284,7 @@ function formatStatus(job) {
   return `pipeline ${job.status}${exit}`;
 }
 
-<<<<<<< Updated upstream
-=======
+
 function renderProgress(currentStage) {
   if (!currentStage) return;
   progressPanel.hidden = false;
@@ -318,7 +317,6 @@ function setBusy(isBusy) {
   });
 }
 
->>>>>>> Stashed changes
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
