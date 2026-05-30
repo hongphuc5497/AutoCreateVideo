@@ -5,10 +5,12 @@ import { createReadStream } from "node:fs";
 import { access, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ZodError } from "zod";
 import { ScriptSchema } from "./render/script-schema.js";
 import { loadConfig } from "./config.js";
 import type { TiktokConfig } from "./config.js";
 import { createLlmClient } from "./llm/llm-client.js";
+import { WebFetchError } from "./llm/web-fetcher.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const PROJECT_ROOT = resolve(__dirname, "..");
@@ -16,10 +18,23 @@ export const OUTPUT_ROOT = join(PROJECT_ROOT, "output");
 export const SETTINGS_PATH = join(OUTPUT_ROOT, ".ui-settings.json");
 const UI_ROOT = join(PROJECT_ROOT, "src", "ui");
 const MAX_BODY_BYTES = 64 * 1024;
-const PUBLIC_BASE_PATH = normalizePublicBasePath(process.env.PUBLIC_BASE_PATH);
 
 type JobStatus = "running" | "success" | "failed";
-type JobEvent = "log" | "status" | "progress";
+type JobEvent = "log" | "status" | "progress" | "error";
+type JobStage = "setup" | "fetch" | "script" | "tts" | "render" | "complete";
+export type JobErrorCode =
+  | "FETCH_FAILED"
+  | "FETCH_TOO_LARGE"
+  | "LLM_ERROR"
+  | "TTS_ERROR"
+  | "RENDER_ERROR"
+  | "SERVER_MISCONFIGURED"
+  | "UNKNOWN";
+
+interface JobError {
+  code: JobErrorCode;
+  message: string;
+}
 
 interface OutputArtifacts {
   scriptJson: boolean;
@@ -59,64 +74,33 @@ interface Job {
   logs: string[];
   listeners: Set<(event: JobEvent, data: unknown) => void>;
   outputDir?: string;
+  stage?: JobStage;
+  error?: JobError;
 }
 
 export interface UiSettings {
   tiktok: TiktokConfig;
+  llm: {
+    provider: "anthropic" | "openai" | "deepseek";
+    apiKey: string;
+    model: string;
+    endpoint?: string;
+  };
+  tts: {
+    provider: "lucylab" | "elevenlabs";
+    lucylabApiKey?: string;
+    lucylabVoiceId?: string;
+    elevenlabsApiKey?: string;
+    elevenlabsVoiceId?: string;
+  };
+  gemini: {
+    apiKey?: string;
+    imageModel?: string;
+  };
 }
 
 const jobs = new Map<string, Job>();
 let runningJob: Job | null = null;
-
-function normalizePublicBasePath(value: string | undefined): string {
-  if (!value) return "";
-  const trimmed = value.trim();
-  if (!trimmed || trimmed === "/") return "";
-  return `/${trimmed.replace(/^\/+|\/+$/g, "")}`;
-}
-
-export function publicPath(path: string): string {
-  const normalized = path.startsWith("/") ? path : `/${path}`;
-  return `${PUBLIC_BASE_PATH}${normalized}`;
-}
-
-function stripPublicBasePath(pathname: string): string {
-  if (!PUBLIC_BASE_PATH) return pathname;
-  if (pathname === PUBLIC_BASE_PATH) return "/";
-  if (pathname.startsWith(`${PUBLIC_BASE_PATH}/`)) {
-    return pathname.slice(PUBLIC_BASE_PATH.length) || "/";
-  }
-  return pathname;
-}
-
-export function isPublicDemoMode(): boolean {
-  return boolFromEnv("PUBLIC_DEMO_MODE", false);
-}
-
-function redactSecret(value: string | undefined): string {
-  return value ? "REDACTED" : "";
-}
-
-function redactUiSettings(settings: UiSettings): UiSettings {
-  return {
-    ...settings,
-    llm: {
-      ...settings.llm,
-      apiKey: redactSecret(settings.llm.apiKey),
-    },
-    tts: {
-      ...settings.tts,
-      lucylabApiKey: redactSecret(settings.tts.lucylabApiKey),
-      lucylabVoiceId: redactSecret(settings.tts.lucylabVoiceId),
-      elevenlabsApiKey: redactSecret(settings.tts.elevenlabsApiKey),
-      elevenlabsVoiceId: redactSecret(settings.tts.elevenlabsVoiceId),
-    },
-    gemini: {
-      ...settings.gemini,
-      apiKey: redactSecret(settings.gemini.apiKey),
-    },
-  };
-}
 
 export function safeOutputPath(input: string): string {
   if (!input || typeof input !== "string") {
@@ -196,10 +180,10 @@ export async function listOutputs(): Promise<OutputItem[]> {
         videoMp4: `${outputDir}/video.mp4`,
       },
       urls: {
-        scriptJson: publicPath(`/outputs/${encodeURIComponent(name)}/script.json`),
-        scriptTxt: publicPath(`/outputs/${encodeURIComponent(name)}/script.txt`),
-        voiceMp3: publicPath(`/outputs/${encodeURIComponent(name)}/voice.mp3`),
-        videoMp4: publicPath(`/outputs/${encodeURIComponent(name)}/video.mp4`),
+        scriptJson: `/outputs/${encodeURIComponent(name)}/script.json`,
+        scriptTxt: `/outputs/${encodeURIComponent(name)}/script.txt`,
+        voiceMp3: `/outputs/${encodeURIComponent(name)}/voice.mp3`,
+        videoMp4: `/outputs/${encodeURIComponent(name)}/video.mp4`,
       },
     };
   }));
@@ -225,6 +209,23 @@ export function defaultUiSettings(): UiSettings {
       handle: process.env.TIKTOK_HANDLE ?? "@congnghe24h",
       followers: process.env.TIKTOK_FOLLOWERS ?? "1.2M followers",
       avatarUrl: process.env.TIKTOK_AVATAR_URL || undefined,
+    },
+    llm: {
+      provider: (process.env.LLM_PROVIDER ?? "anthropic") as "anthropic" | "openai" | "deepseek",
+      apiKey: process.env.LLM_API_KEY ?? "",
+      model: process.env.LLM_MODEL ?? "claude-haiku-4-5-20251001",
+      endpoint: process.env.LLM_ENDPOINT ?? "",
+    },
+    tts: {
+      provider: (process.env.TTS_PROVIDER ?? "lucylab") as "lucylab" | "elevenlabs",
+      lucylabApiKey: process.env.VIETNAMESE_API_KEY ?? "",
+      lucylabVoiceId: process.env.VIETNAMESE_VOICEID ?? "",
+      elevenlabsApiKey: process.env.ELEVENLABS_API_KEY ?? "",
+      elevenlabsVoiceId: process.env.ELEVENLABS_VOICE_ID ?? "",
+    },
+    gemini: {
+      apiKey: process.env.GEMINI_API_KEY ?? "",
+      imageModel: process.env.GEMINI_IMAGE_MODEL ?? "gemini-2.5-flash-image",
     },
   };
 }
@@ -253,6 +254,11 @@ function optionalUrl(value: unknown, name: string): string | undefined {
   return trimmed;
 }
 
+function optionalString(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  return String(value).trim();
+}
+
 export function normalizeUiSettings(input: unknown, fallback = defaultUiSettings()): UiSettings {
   const source = input && typeof input === "object" ? input as Record<string, unknown> : {};
   const tiktokInput = source.tiktok && typeof source.tiktok === "object"
@@ -262,6 +268,16 @@ export function normalizeUiSettings(input: unknown, fallback = defaultUiSettings
     ? tiktokInput.enabled
     : fallback.tiktok.enabled;
 
+  const llmInput = source.llm && typeof source.llm === "object"
+    ? source.llm as Record<string, unknown>
+    : {};
+  const ttsInput = source.tts && typeof source.tts === "object"
+    ? source.tts as Record<string, unknown>
+    : {};
+  const geminiInput = source.gemini && typeof source.gemini === "object"
+    ? source.gemini as Record<string, unknown>
+    : {};
+
   return {
     tiktok: {
       enabled,
@@ -269,6 +285,23 @@ export function normalizeUiSettings(input: unknown, fallback = defaultUiSettings
       handle: requiredString(tiktokInput.handle ?? fallback.tiktok.handle, "TikTok handle"),
       followers: requiredString(tiktokInput.followers ?? fallback.tiktok.followers, "TikTok followers"),
       avatarUrl: optionalUrl(tiktokInput.avatarUrl ?? fallback.tiktok.avatarUrl, "TikTok avatar URL"),
+    },
+    llm: {
+      provider: (llmInput.provider ?? fallback.llm.provider) as "anthropic" | "openai" | "deepseek",
+      apiKey: optionalString(llmInput.apiKey ?? fallback.llm.apiKey),
+      model: optionalString(llmInput.model ?? fallback.llm.model),
+      endpoint: optionalString(llmInput.endpoint ?? fallback.llm.endpoint),
+    },
+    tts: {
+      provider: (ttsInput.provider ?? fallback.tts.provider) as "lucylab" | "elevenlabs",
+      lucylabApiKey: optionalString(ttsInput.lucylabApiKey ?? fallback.tts.lucylabApiKey),
+      lucylabVoiceId: optionalString(ttsInput.lucylabVoiceId ?? fallback.tts.lucylabVoiceId),
+      elevenlabsApiKey: optionalString(ttsInput.elevenlabsApiKey ?? fallback.tts.elevenlabsApiKey),
+      elevenlabsVoiceId: optionalString(ttsInput.elevenlabsVoiceId ?? fallback.tts.elevenlabsVoiceId),
+    },
+    gemini: {
+      apiKey: optionalString(geminiInput.apiKey ?? fallback.gemini.apiKey),
+      imageModel: optionalString(geminiInput.imageModel ?? fallback.gemini.imageModel),
     },
   };
 }
@@ -293,13 +326,31 @@ export async function writeUiSettings(input: unknown): Promise<UiSettings> {
 }
 
 export function settingsToEnv(settings: UiSettings): NodeJS.ProcessEnv {
-  return {
+  const env: NodeJS.ProcessEnv = {
     TIKTOK_ENABLED: settings.tiktok.enabled ? "true" : "false",
     TIKTOK_DISPLAY_NAME: settings.tiktok.displayName,
     TIKTOK_HANDLE: settings.tiktok.handle,
     TIKTOK_FOLLOWERS: settings.tiktok.followers,
     TIKTOK_AVATAR_URL: settings.tiktok.avatarUrl ?? "",
   };
+  if (settings.llm) {
+    env.LLM_PROVIDER = settings.llm.provider;
+    env.LLM_API_KEY = settings.llm.apiKey;
+    env.LLM_MODEL = settings.llm.model;
+    env.LLM_ENDPOINT = settings.llm.endpoint;
+  }
+  if (settings.tts) {
+    env.TTS_PROVIDER = settings.tts.provider;
+    env.VIETNAMESE_API_KEY = settings.tts.lucylabApiKey;
+    env.VIETNAMESE_VOICEID = settings.tts.lucylabVoiceId;
+    env.ELEVENLABS_API_KEY = settings.tts.elevenlabsApiKey;
+    env.ELEVENLABS_VOICE_ID = settings.tts.elevenlabsVoiceId;
+  }
+  if (settings.gemini) {
+    env.GEMINI_API_KEY = settings.gemini.apiKey;
+    env.GEMINI_IMAGE_MODEL = settings.gemini.imageModel;
+  }
+  return env;
 }
 
 function createJob(input: string): Job {
@@ -334,14 +385,67 @@ function appendLog(job: Job, text: string): void {
   }
 }
 
-function emitProgress(job: Job, message: string): void {
+function emitProgress(job: Job, stage: JobStage, message: string): void {
+  job.stage = stage;
   job.logs.push(`[progress] ${message}`);
-  emit(job, "progress", { message });
+  emit(job, "progress", { stage, message });
+}
+
+export function classifyJobError(error: unknown): JobError {
+  if (error instanceof WebFetchError) {
+    return { code: error.code, message: error.message };
+  }
+  if (error instanceof ZodError) {
+    return { code: "LLM_ERROR", message: `Generated script failed schema validation: ${error.message}` };
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  if (/LLM_API_KEY|No response from LLM|JSON parse|anthropic|openai|deepseek|rate limit/i.test(message)) {
+    return { code: "LLM_ERROR", message };
+  }
+  if (/VIETNAMESE_API_KEY|VIETNAMESE_VOICEID|ELEVENLABS_API_KEY|ELEVENLABS_VOICE_ID|ffmpeg|ffprobe|ENOENT/i.test(message)) {
+    return { code: "SERVER_MISCONFIGURED", message };
+  }
+  return { code: "UNKNOWN", message };
+}
+
+function lastMatchingLog(logs: string[], pattern: RegExp): string | undefined {
+  for (let i = logs.length - 1; i >= 0; i--) {
+    const line = logs[i];
+    if (pattern.test(line)) return line.replace(/^Error:\s*/, "");
+  }
+  return undefined;
+}
+
+export function classifyPipelineExit(logs: string[], exitCode: number | null): JobError {
+  const ttsMessage = lastMatchingLog(
+    logs,
+    /ElevenLabs TTS failed|LucyLab .*error|LucyLab export .*failed|LucyLab returned|TTS failed/i,
+  );
+  if (ttsMessage) {
+    return { code: "TTS_ERROR", message: ttsMessage };
+  }
+
+  const misconfiguredMessage = lastMatchingLog(logs, /ffmpeg|ffprobe|ENOENT|No bundled avatar/i);
+  if (misconfiguredMessage) {
+    return { code: "SERVER_MISCONFIGURED", message: misconfiguredMessage };
+  }
+
+  return { code: "RENDER_ERROR", message: `Pipeline exited with code ${exitCode}` };
+}
+
+function failJob(job: Job, error: JobError, exitCode: number | null): void {
+  if (job.status !== "running") return;
+  job.error = error;
+  appendLog(job, `Job failed [${error.code}]: ${error.message}`);
+  emit(job, "error", error);
+  finishJob(job, "failed", exitCode);
 }
 
 async function spawnPipeline(job: Job, scriptPath: string): Promise<void> {
   const settings = await readUiSettings();
   const relPath = toOutputRelative(scriptPath);
+  emitProgress(job, "tts", "Generating voiceover...");
   appendLog(job, `$ npm run pipeline -- ${relPath}`);
   const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
   const child = spawn(npmCmd, ["run", "pipeline", "--", relPath], {
@@ -350,14 +454,26 @@ async function spawnPipeline(job: Job, scriptPath: string): Promise<void> {
     stdio: ["ignore", "pipe", "pipe"],
   });
 
-  child.stdout.on("data", (chunk) => appendLog(job, chunk.toString()));
-  child.stderr.on("data", (chunk) => appendLog(job, chunk.toString()));
+  const handleOutput = (text: string) => {
+    appendLog(job, text);
+    if (/Render with hyperframes/i.test(text)) {
+      emitProgress(job, "render", "Rendering video...");
+    } else if (/\bDone\b|=== Result ===/i.test(text)) {
+      emitProgress(job, "complete", "Video complete");
+    }
+  };
+  child.stdout.on("data", (chunk) => handleOutput(chunk.toString()));
+  child.stderr.on("data", (chunk) => handleOutput(chunk.toString()));
   child.on("error", (err) => {
-    appendLog(job, `Failed to start process: ${err.message}`);
-    finishJob(job, "failed", null);
+    failJob(job, { code: "SERVER_MISCONFIGURED", message: `Failed to start process: ${err.message}` }, null);
   });
   child.on("close", (code) => {
-    finishJob(job, code === 0 ? "success" : "failed", code);
+    if (code === 0) {
+      emitProgress(job, "complete", "Video complete");
+      finishJob(job, "success", code);
+    } else {
+      failJob(job, classifyPipelineExit(job.logs, code), code);
+    }
   });
 }
 
@@ -381,6 +497,8 @@ function serializeJob(job: Job) {
     startedAt: job.startedAt,
     finishedAt: job.finishedAt,
     outputDir: job.outputDir,
+    stage: job.stage,
+    error: job.error,
     logs: job.logs,
   };
 }
@@ -491,73 +609,58 @@ function timestamp(): string {
 
 async function runGenerateJob(job: Job, url: string, res: ServerResponse): Promise<void> {
   try {
-    emitProgress(job, "Creating output directory...");
+    emitProgress(job, "setup", "Creating output directory...");
     const slug = slugFromUrl(url);
     const ts = timestamp();
     const outputDir = join(OUTPUT_ROOT, `${slug}-${ts}`);
     await mkdir(outputDir, { recursive: true });
     job.outputDir = toOutputRelative(outputDir);
 
-    emitProgress(job, "Loading configuration...");
+    emitProgress(job, "setup", "Loading configuration...");
     const cfg = loadConfig();
 
-    emitProgress(job, "Starting LLM script generation...");
+    emitProgress(job, "script", "Starting LLM script generation...");
     const llmClient = createLlmClient(cfg);
     const rawScript = await llmClient.generateScript(url, (msg) => {
-      emitProgress(job, msg);
+      emitProgress(job, msg.startsWith("Fetching ") ? "fetch" : "script", msg);
     });
 
-    emitProgress(job, "Validating generated script...");
+    emitProgress(job, "script", "Validating generated script...");
     const script = ScriptSchema.parse(rawScript);
 
     const scriptPath = join(outputDir, "script.json");
     await writeFile(scriptPath, JSON.stringify(script, null, 2));
 
-    emitProgress(job, `Script written to ${toOutputRelative(scriptPath)}`);
-    emitProgress(job, "Starting pipeline...");
+    emitProgress(job, "script", `Script written to ${toOutputRelative(scriptPath)}`);
+    emitProgress(job, "tts", "Starting pipeline...");
 
     await spawnPipeline(job, scriptPath);
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    appendLog(job, `Generate failed: ${message}`);
-    finishJob(job, "failed", null);
+    failJob(job, classifyJobError(e), null);
   }
 }
 
 export async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
-  const pathname = stripPublicBasePath(url.pathname);
 
   try {
-    if (req.method === "GET" && pathname === "/api/outputs") {
+    if (req.method === "GET" && url.pathname === "/api/outputs") {
       sendJson(res, 200, { outputs: await listOutputs() });
       return;
     }
 
-    if (req.method === "GET" && pathname === "/api/settings") {
-      const settings = await readUiSettings();
-      sendJson(res, 200, {
-        demoMode: isPublicDemoMode(),
-        settings: isPublicDemoMode() ? redactUiSettings(settings) : settings,
-      });
+    if (req.method === "GET" && url.pathname === "/api/settings") {
+      sendJson(res, 200, { settings: await readUiSettings() });
       return;
     }
 
-    if (req.method === "PUT" && pathname === "/api/settings") {
-      if (isPublicDemoMode()) {
-        sendError(res, 403, "Settings are read-only in public demo mode");
-        return;
-      }
+    if (req.method === "PUT" && url.pathname === "/api/settings") {
       const body = await readJsonBody(req);
       sendJson(res, 200, { settings: await writeUiSettings(body) });
       return;
     }
 
-    if (req.method === "POST" && pathname === "/api/generate") {
-      if (isPublicDemoMode()) {
-        sendError(res, 403, "Video generation is disabled in public demo mode");
-        return;
-      }
+    if (req.method === "POST" && url.pathname === "/api/generate") {
       const body = await readJsonBody(req);
       const articleUrl = String(body.url || "").trim();
       if (!articleUrl || !/^https?:\/\/.+/.test(articleUrl)) {
@@ -571,24 +674,19 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
       return;
     }
 
-    if (req.method === "POST" && pathname === "/api/pipeline") {
-      if (isPublicDemoMode()) {
-        sendError(res, 403, "Pipeline runs are disabled in public demo mode");
-        return;
-      }
+    if (req.method === "POST" && url.pathname === "/api/pipeline") {
       const body = await readJsonBody(req);
       const scriptPath = await assertExistingScriptPath(body.scriptPath);
       const job = createJob(scriptPath);
       job.outputDir = toOutputRelative(dirname(join(PROJECT_ROOT, scriptPath)));
       sendJson(res, 202, { job: serializeJob(job) });
       spawnPipeline(job, join(PROJECT_ROOT, scriptPath)).catch((e) => {
-        appendLog(job, `Failed to start pipeline: ${e instanceof Error ? e.message : String(e)}`);
-        finishJob(job, "failed", null);
+        failJob(job, classifyJobError(e), null);
       });
       return;
     }
 
-    const eventsMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/events$/);
+    const eventsMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/events$/);
     if (req.method === "GET" && eventsMatch) {
       const job = jobs.get(eventsMatch[1]);
       if (!job) {
@@ -611,13 +709,13 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
       return;
     }
 
-    if (req.method === "GET" && pathname.startsWith("/outputs/")) {
-      await serveStatic(res, OUTPUT_ROOT, pathname.slice("/outputs/".length));
+    if (req.method === "GET" && url.pathname.startsWith("/outputs/")) {
+      await serveStatic(res, OUTPUT_ROOT, url.pathname.slice("/outputs/".length));
       return;
     }
 
     if (req.method === "GET") {
-      const staticPath = pathname === "/" ? "index.html" : pathname.slice(1);
+      const staticPath = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
       await serveStatic(res, UI_ROOT, staticPath);
       return;
     }
@@ -632,10 +730,9 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT ?? 4317);
-  const host = process.env.HOST ?? "127.0.0.1";
   createServer((req, res) => {
     handleRequest(req, res).catch((e) => sendError(res, 500, e instanceof Error ? e.message : String(e)));
-  }).listen(port, host, () => {
-    console.log(`Auto News Video UI: http://${host}:${port}${PUBLIC_BASE_PATH || "/"}`);
+  }).listen(port, "127.0.0.1", () => {
+    console.log(`Auto News Video UI: http://127.0.0.1:${port}`);
   });
 }
